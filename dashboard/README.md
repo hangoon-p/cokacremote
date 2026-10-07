@@ -5,11 +5,12 @@ Cloudflare Workers + D1 + static PWA backend for the Cokacremote watcher.
 ## What it does
 
 - receives outbound watcher heartbeats at `POST /api/heartbeat`,
-- stores the latest snapshot per Cokacremote instance in D1,
-- records state transitions,
+- stores only the latest snapshot per Cokacremote instance in D1,
 - marks an instance offline when heartbeat is absent,
 - serves the mobile dashboard as a PWA,
-- stores Web Push subscriptions and sends transition/offline notifications.
+- stores Web Push subscriptions and sends state-change/offline notifications.
+
+D1 is intentionally used as a minimal persistent state store rather than as an event/history database. The schema contains only `instances` and `push_subscriptions`; no monitoring history is retained server-side.
 
 The office PC never needs an inbound Internet port.
 
@@ -93,7 +94,7 @@ Each installation must use a unique `COKACREMOTE_WATCHER_INSTANCE_ID`.
 5. Tap **알림 켜기** and grant notification permission.
 6. Use **테스트** to verify Web Push.
 
-The read token is stored only in the browser's local storage. Static PWA assets are public, but status/event/push APIs require the dashboard token.
+The read token is stored only in the browser's local storage. Static PWA assets are public, but status/push APIs require the dashboard token.
 
 ## Local validation
 

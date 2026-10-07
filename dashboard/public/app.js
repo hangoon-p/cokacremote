@@ -4,7 +4,6 @@ const authCard = $("authCard");
 const controls = $("controls");
 const tokenInput = $("token");
 const instancesEl = $("instances");
-const eventsEl = $("events");
 const updatedEl = $("updated");
 const countEl = $("instanceCount");
 const pushStateEl = $("pushState");
@@ -147,41 +146,13 @@ function renderStatus(data) {
   })} · Offline 기준 ${data.offlineAfterSeconds}초`;
 }
 
-function renderEvents(data) {
-  const events = data.events || [];
-  eventsEl.innerHTML = events.length
-    ? events
-        .map((event) => {
-          const payload = event.payload || {};
-          let body = "";
-          if (payload.ageMs != null) body = `heartbeat 누락 ${relative(payload.ageMs)}`;
-          if (payload.summary?.stalledTasks?.length) {
-            body = `정지 작업 ${payload.summary.stalledTasks.length}건`;
-          }
-          return `
-            <div class="event">
-              <div class="eventTop">
-                <span class="eventName">${esc(event.instanceId)} · ${esc(event.eventType)}</span>
-                <span class="eventTime">${esc(time(event.occurredAt))}</span>
-              </div>
-              <div class="eventBody">${esc(event.severity)}${body ? ` · ${esc(body)}` : ""}</div>
-            </div>`;
-        })
-        .join("")
-    : '<div class="empty">이벤트가 없습니다.</div>';
-}
-
 async function refresh() {
   if (!token) return;
   try {
-    const [status, events] = await Promise.all([
-      api("/api/status"),
-      api("/api/events?limit=40"),
-    ]);
+    const status = await api("/api/status");
     authCard.classList.add("hidden");
     controls.classList.remove("hidden");
     renderStatus(status);
-    renderEvents(events);
     await updatePushState();
   } catch (error) {
     updatedEl.textContent = error.message;
@@ -277,7 +248,6 @@ $("logout").addEventListener("click", () => {
   controls.classList.add("hidden");
   authCard.classList.remove("hidden");
   instancesEl.innerHTML = "";
-  eventsEl.innerHTML = "";
   updatedEl.textContent = "로그아웃됨";
 });
 

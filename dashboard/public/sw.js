@@ -1,4 +1,4 @@
-const CACHE = "cokacremote-monitor-v1";
+const CACHE = "cokacremote-monitor-v2";
 const STATIC = ["/", "/styles.css", "/app.js", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", (event) => {

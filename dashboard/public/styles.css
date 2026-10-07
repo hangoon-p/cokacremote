@@ -54,13 +54,6 @@ input {
 .task:last-child { border-bottom:0; }
 .taskTitle { font-size:13px; font-weight:650; }
 .taskMeta { margin-top:3px; color:#8f9db4; font-size:11px; }
-.events { display:flex; flex-direction:column; }
-.event { padding:10px 0; border-bottom:1px solid #25324a; }
-.event:last-child { border-bottom:0; }
-.eventTop { display:flex; justify-content:space-between; gap:12px; font-size:12px; }
-.eventName { font-weight:700; }
-.eventTime,.eventBody { color:#92a0b6; font-size:11px; }
-.eventBody { margin-top:4px; }
 .empty { padding:22px; text-align:center; color:#7f8ca3; }
 .hidden { display:none !important; }
 form { max-width:480px; }

@@ -26,7 +26,11 @@ function bearerToken(request) {
 }
 
 function authorized(request, expected) {
-  return typeof expected === "string" && expected.length > 0 && bearerToken(request) === expected;
+  return (
+    typeof expected === "string" &&
+    expected.length > 0 &&
+    bearerToken(request) === expected
+  );
 }
 
 function offlineAfterMs(env) {
@@ -45,16 +49,6 @@ async function readJson(request, maxBytes = 512 * 1024) {
     throw new Error("Request body too large");
   }
   return JSON.parse(text);
-}
-
-async function insertEvent(env, instanceId, eventType, severity, payload, now) {
-  await env.DB.prepare(
-    `INSERT INTO events
-      (instance_id, event_type, severity, occurred_at, payload_json)
-     VALUES (?, ?, ?, ?, ?)`,
-  )
-    .bind(instanceId, eventType, severity, now, JSON.stringify(payload))
-    .run();
 }
 
 function pushConfigured(env) {
@@ -151,10 +145,9 @@ async function heartbeat(request, env, ctx) {
 
   await env.DB.prepare(
     `INSERT INTO instances
-      (instance_id, hostname, snapshot_json, status_key, last_seen_at, offline_notified)
-     VALUES (?, ?, ?, ?, ?, 0)
+      (instance_id, snapshot_json, status_key, last_seen_at, offline_notified)
+     VALUES (?, ?, ?, ?, 0)
      ON CONFLICT(instance_id) DO UPDATE SET
-       hostname = excluded.hostname,
        snapshot_json = excluded.snapshot_json,
        status_key = excluded.status_key,
        last_seen_at = excluded.last_seen_at,
@@ -162,7 +155,6 @@ async function heartbeat(request, env, ctx) {
   )
     .bind(
       snapshot.instanceId,
-      snapshot.hostname,
       JSON.stringify(snapshot),
       nextKey,
       now,
@@ -170,42 +162,20 @@ async function heartbeat(request, env, ctx) {
     .run();
 
   const wasOffline = previous?.offline_notified === 1;
-  const stateChanged = previous && previous.status_key !== nextKey;
+  const stateChanged = Boolean(previous && previous.status_key !== nextKey);
   const healthy = isHealthy(summary);
   let notification;
 
   if (wasOffline) {
-    await insertEvent(
-      env,
-      snapshot.instanceId,
-      "heartbeat_restored",
-      healthy ? "info" : "warning",
-      { summary },
-      now,
-    );
     notification = healthy
       ? recoveryMessage(snapshot.instanceId)
       : alertMessage(snapshot.instanceId, summary);
-  }
-
-  if (!previous || stateChanged) {
-    await insertEvent(
-      env,
-      snapshot.instanceId,
-      "state_change",
-      healthy ? "info" : "warning",
-      { summary },
-      now,
-    );
-    if (!notification) {
-      if (!previous && !healthy) {
-        notification = alertMessage(snapshot.instanceId, summary);
-      } else if (previous && healthy) {
-        notification = recoveryMessage(snapshot.instanceId);
-      } else if (previous && !healthy) {
-        notification = alertMessage(snapshot.instanceId, summary);
-      }
-    }
+  } else if (stateChanged) {
+    notification = healthy
+      ? recoveryMessage(snapshot.instanceId)
+      : alertMessage(snapshot.instanceId, summary);
+  } else if (!previous && !healthy) {
+    notification = alertMessage(snapshot.instanceId, summary);
   }
 
   if (notification) {
@@ -216,7 +186,7 @@ async function heartbeat(request, env, ctx) {
     ok: true,
     instanceId: snapshot.instanceId,
     receivedAt: now,
-    stateChanged: Boolean(stateChanged),
+    stateChanged,
     heartbeatRestored: wasOffline,
   });
 }
@@ -232,7 +202,7 @@ async function listStatus(request, env) {
   const now = Date.now();
   const offlineMs = offlineAfterMs(env);
   const rows = await env.DB.prepare(
-    `SELECT instance_id, hostname, snapshot_json, last_seen_at, offline_notified
+    `SELECT instance_id, snapshot_json, last_seen_at, offline_notified
        FROM instances
       ORDER BY instance_id`,
   ).all();
@@ -247,7 +217,10 @@ async function listStatus(request, env) {
     const lastSeenAt = Number(row.last_seen_at);
     return {
       instanceId: row.instance_id,
-      hostname: row.hostname,
+      hostname:
+        snapshot && typeof snapshot.hostname === "string"
+          ? snapshot.hostname
+          : "",
       lastSeenAt,
       ageMs: Math.max(0, now - lastSeenAt),
       offline: now - lastSeenAt > offlineMs,
@@ -261,44 +234,6 @@ async function listStatus(request, env) {
     offlineAfterSeconds: offlineMs / 1000,
     pushConfigured: pushConfigured(env),
     instances,
-  });
-}
-
-async function listEvents(request, env) {
-  if (!env.DASHBOARD_TOKEN || !authorized(request, env.DASHBOARD_TOKEN)) {
-    return json({ error: "unauthorized" }, 401);
-  }
-  const url = new URL(request.url);
-  const requested = Number(url.searchParams.get("limit") || "50");
-  const limit = Number.isInteger(requested)
-    ? Math.max(1, Math.min(200, requested))
-    : 50;
-  const rows = await env.DB.prepare(
-    `SELECT id, instance_id, event_type, severity, occurred_at, payload_json
-       FROM events
-      ORDER BY occurred_at DESC, id DESC
-      LIMIT ?`,
-  )
-    .bind(limit)
-    .all();
-
-  return json({
-    events: (rows.results || []).map((row) => {
-      let payload;
-      try {
-        payload = JSON.parse(row.payload_json);
-      } catch {
-        payload = undefined;
-      }
-      return {
-        id: row.id,
-        instanceId: row.instance_id,
-        eventType: row.event_type,
-        severity: row.severity,
-        occurredAt: row.occurred_at,
-        payload,
-      };
-    }),
   });
 }
 
@@ -333,18 +268,13 @@ async function subscribePush(request, env) {
   const now = Date.now();
   await env.DB.prepare(
     `INSERT INTO push_subscriptions
-      (endpoint, subscription_json, created_at, updated_at)
-     VALUES (?, ?, ?, ?)
+      (endpoint, subscription_json, updated_at)
+     VALUES (?, ?, ?)
      ON CONFLICT(endpoint) DO UPDATE SET
        subscription_json = excluded.subscription_json,
        updated_at = excluded.updated_at`,
   )
-    .bind(
-      subscription.endpoint,
-      JSON.stringify(subscription),
-      now,
-      now,
-    )
+    .bind(subscription.endpoint, JSON.stringify(subscription), now)
     .run();
 
   return json({ ok: true });
@@ -405,9 +335,6 @@ async function handleApi(request, env, ctx) {
   if (url.pathname === "/api/status" && request.method === "GET") {
     return listStatus(request, env);
   }
-  if (url.pathname === "/api/events" && request.method === "GET") {
-    return listEvents(request, env);
-  }
   if (url.pathname === "/api/push/key" && request.method === "GET") {
     return pushKey(request, env);
   }
@@ -438,22 +365,17 @@ async function markOfflineInstances(env) {
     const updated = await env.DB.prepare(
       `UPDATE instances
           SET offline_notified = 1
-        WHERE instance_id = ? AND offline_notified = 0`,
+        WHERE instance_id = ?
+          AND offline_notified = 0
+          AND last_seen_at < ?`,
     )
-      .bind(row.instance_id)
+      .bind(row.instance_id, cutoff)
       .run();
     if ((updated.meta?.changes || 0) === 0) {
       continue;
     }
+
     const ageMs = Math.max(0, now - Number(row.last_seen_at));
-    await insertEvent(
-      env,
-      row.instance_id,
-      "heartbeat_lost",
-      "critical",
-      { ageMs },
-      now,
-    );
     await notifyAll(env, offlineMessage(row.instance_id, ageMs));
   }
 }
