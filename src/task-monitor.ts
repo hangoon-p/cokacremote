@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { ProcessManager } from "./process-manager.js";
 
-export type TaskStatus = "WORKING" | "COMPLETED" | "STALLED";
+export type TaskStatus = "OBSERVED" | "WORKING" | "COMPLETED" | "STALLED";
 
 export interface TaskSnapshot {
   taskId: string;
@@ -121,7 +121,8 @@ export class TaskMonitor {
       return this.#snapshot(existing);
     }
 
-    if (existing?.status === "WORKING" && !existing.explicitStart) {
+    if (existing?.status === "OBSERVED") {
+      existing.status = "WORKING";
       existing.explicitStart = true;
       existing.userRequest = userRequest;
       existing.title = title?.trim() || existing.title;
@@ -146,7 +147,7 @@ export class TaskMonitor {
   toolStarted(chatSession: string, toolName: string): TaskSnapshot {
     const now = Date.now();
     let task = this.#currentBySession.get(chatSession);
-    if (!task || task.status !== "WORKING") {
+    if (!task || (task.status !== "WORKING" && task.status !== "OBSERVED")) {
       task = this.#createTask(chatSession, now, { explicitStart: false });
       this.#emitState(task, "implicit_task_start");
     }
@@ -162,7 +163,7 @@ export class TaskMonitor {
     outcome: "completed" | "aborted",
   ): TaskSnapshot | undefined {
     const task = this.#currentBySession.get(chatSession);
-    if (!task || task.status !== "WORKING") {
+    if (!task || (task.status !== "WORKING" && task.status !== "OBSERVED")) {
       return task ? this.#snapshot(task) : undefined;
     }
     task.activeCalls = Math.max(0, task.activeCalls - 1);
@@ -176,7 +177,7 @@ export class TaskMonitor {
 
   trackProcess(chatSession: string, processSessionId: string): void {
     const task = this.#currentBySession.get(chatSession);
-    if (!task || task.status !== "WORKING") {
+    if (!task || (task.status !== "WORKING" && task.status !== "OBSERVED")) {
       return;
     }
     task.processSessionIds.add(processSessionId);
@@ -186,6 +187,9 @@ export class TaskMonitor {
     const task = this.#currentBySession.get(chatSession);
     if (!task) {
       throw new Error("No active monitored task exists for this ChatGPT session.");
+    }
+    if (task.status === "OBSERVED" || !task.explicitStart) {
+      throw new Error("task_complete requires an explicit task_begin for the monitored work.");
     }
     if (task.status === "COMPLETED") {
       return this.#snapshot(task);
@@ -214,7 +218,7 @@ export class TaskMonitor {
 
   refresh(now = Date.now()): TaskMonitorState {
     for (const task of this.#currentBySession.values()) {
-      if (task.status !== "WORKING") {
+      if (task.status !== "WORKING" && task.status !== "OBSERVED") {
         continue;
       }
       const processState = this.#processState(task);
@@ -225,7 +229,11 @@ export class TaskMonitor {
         continue;
       }
       if (now - task.lastActivityAt >= this.#stallMs) {
-        this.#markStalled(task, now, "inactivity_timeout");
+        if (task.status === "OBSERVED") {
+          this.#completeObserved(task, now);
+        } else {
+          this.#markStalled(task, now, "inactivity_timeout");
+        }
       }
     }
     return this.getState();
@@ -255,7 +263,7 @@ export class TaskMonitor {
     const task: TaskRecord = {
       taskId: randomUUID(),
       chatSession,
-      status: "WORKING",
+      status: input.explicitStart ? "WORKING" : "OBSERVED",
       explicitStart: input.explicitStart,
       userRequest: input.userRequest,
       title: input.title,
@@ -307,8 +315,18 @@ export class TaskMonitor {
     return { runningProcesses, lastProcessActivityAt };
   }
 
+  #completeObserved(task: TaskRecord, now: number): void {
+    if (task.status !== "OBSERVED") {
+      return;
+    }
+    task.status = "COMPLETED";
+    task.completedAt = now;
+    task.lastActivityAt = Math.max(task.lastActivityAt, now);
+    this.#emitState(task, "implicit_activity_idle");
+  }
+
   #markStalled(task: TaskRecord, now: number, reason: string): void {
-    if (task.status !== "WORKING") {
+    if (task.status !== "WORKING" || !task.explicitStart) {
       return;
     }
     task.status = "STALLED";

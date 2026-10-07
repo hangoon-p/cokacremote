@@ -18,7 +18,7 @@ interface JsonRpcResponse {
 interface MonitorTask {
   taskId: string;
   chatSession: string;
-  status: "WORKING" | "COMPLETED" | "STALLED";
+  status: "OBSERVED" | "WORKING" | "COMPLETED" | "STALLED";
   explicitStart: boolean;
   userRequest?: string;
   title?: string;
@@ -195,7 +195,7 @@ describe("task monitor HTTP integration", () => {
     );
   });
 
-  it("automatically creates implicit work and later marks it stalled", async () => {
+  it("records implicit activity without turning it into a stalled alert", async () => {
     const chatSession = "chat-monitor-integration-stall";
     const response = await post(
       {
@@ -219,7 +219,7 @@ describe("task monitor HTTP integration", () => {
       expect.arrayContaining([
         expect.objectContaining({
           chatSession,
-          status: "WORKING",
+          status: "OBSERVED",
           explicitStart: false,
           lastTool: "write_file",
         }),
@@ -232,7 +232,8 @@ describe("task monitor HTTP integration", () => {
       expect.arrayContaining([
         expect.objectContaining({
           chatSession,
-          status: "STALLED",
+          status: "COMPLETED",
+          explicitStart: false,
         }),
       ]),
     );

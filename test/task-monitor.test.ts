@@ -87,6 +87,7 @@ describe("TaskMonitor", () => {
     const monitor = new TaskMonitor(manager, { stallMs: 1000, emit: () => {} });
 
     const implicit = monitor.toolStarted("chat-a", "read_file");
+    expect(implicit.status).toBe("OBSERVED");
     monitor.toolFinished("chat-a", "read_file", "completed");
     const explicit = monitor.begin("chat-a", "Inspect the current repository", "Repo inspection");
 
@@ -98,6 +99,41 @@ describe("TaskMonitor", () => {
       title: "Repo inspection",
     });
     expect(monitor.getState().tasks).toHaveLength(1);
+  });
+
+  it("closes implicit activity as COMPLETED instead of raising a false STALLED alert", () => {
+    manager = createManager();
+    const events: Record<string, unknown>[] = [];
+    const monitor = new TaskMonitor(manager, {
+      stallMs: 1000,
+      emit: (event) => events.push(event),
+    });
+
+    monitor.toolStarted("chat-a", "read_file");
+    monitor.toolFinished("chat-a", "read_file", "completed");
+    const lastActivity = Date.parse(monitor.current("chat-a")!.lastActivityAt);
+
+    monitor.refresh(lastActivity + 1000);
+
+    expect(monitor.current("chat-a")).toMatchObject({
+      status: "COMPLETED",
+      explicitStart: false,
+      stalledAt: undefined,
+      stalledReason: undefined,
+    });
+    expect(events.map((event) => event.reason)).toEqual([
+      "implicit_task_start",
+      "implicit_activity_idle",
+    ]);
+  });
+
+  it("refuses task_complete for unbracketed implicit activity", () => {
+    manager = createManager();
+    const monitor = new TaskMonitor(manager, { stallMs: 1000, emit: () => {} });
+    monitor.toolStarted("chat-a", "read_file");
+    monitor.toolFinished("chat-a", "read_file", "completed");
+
+    expect(() => monitor.complete("chat-a")).toThrow("explicit task_begin");
   });
 
   it("keeps concurrent ChatGPT conversations isolated", () => {
