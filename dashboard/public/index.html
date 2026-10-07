@@ -13,13 +13,22 @@
 </head>
 <body>
   <header>
-    <div>
+    <div class="headerTitle">
       <h1>Cokacremote Monitor</h1>
       <p id="updated">연결 대기 중</p>
     </div>
     <div class="headerActions">
-      <button id="refresh" class="ghost">새로고침</button>
-      <button id="settings" class="ghost hidden">설정</button>
+      <button id="refresh" class="iconButton ghost" type="button" aria-label="새로고침" title="새로고침">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 11a8 8 0 0 0-14.8-4.2L3 9m0 0V4m0 5h5M4 13a8 8 0 0 0 14.8 4.2L21 15m0 0v5m0-5h-5"/>
+        </svg>
+      </button>
+      <button id="settings" class="iconButton ghost hidden" type="button" aria-label="설정" title="설정">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/>
+          <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.09A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.09A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.11.39.32.74.6 1 .3.28.68.45 1.1.49H21v4h-.09A1.7 1.7 0 0 0 19.4 15Z"/>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -48,7 +57,11 @@
         <h2>설정</h2>
         <p>이 기기의 대시보드와 알림 설정입니다.</p>
       </div>
-      <button id="closeSettings" class="iconButton ghost" aria-label="설정 닫기">×</button>
+      <button id="closeSettings" class="iconButton ghost" type="button" aria-label="설정 닫기" title="닫기">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6 6l12 12M18 6 6 18"/>
+        </svg>
+      </button>
     </div>
 
     <section class="settingsSection">
@@ -58,6 +71,12 @@
         <button id="enablePush">알림 켜기</button>
         <button id="testPush" class="ghost">테스트</button>
       </div>
+    </section>
+
+    <section class="settingsSection">
+      <h3>숨긴 세션</h3>
+      <p>수동으로 숨긴 세션입니다. 새 MCP 활동이 감지되면 자동으로 다시 표시됩니다.</p>
+      <div id="hiddenSessions" class="hiddenSessionList"></div>
     </section>
 
     <section class="settingsSection settingsDanger">

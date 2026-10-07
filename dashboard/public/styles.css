@@ -20,15 +20,26 @@ header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: calc(14px + env(safe-area-inset-top)) 18px 14px;
-  background: rgba(255,255,255,.94);
+  gap: 10px;
+  padding: calc(12px + env(safe-area-inset-top)) 16px 12px;
+  background: rgba(255,255,255,.95);
   backdrop-filter: blur(16px);
   border-bottom: 1px solid #e0e6ef;
 }
 
+.headerTitle {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 h1,h2,h3,p { margin-top: 0; }
-h1 { margin-bottom: 3px; font-size: 21px; }
+h1 {
+  margin-bottom: 3px;
+  font-size: 21px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 h2 { margin-bottom: 10px; font-size: 17px; }
 h3 { margin-bottom: 6px; font-size: 15px; }
 
@@ -39,6 +50,10 @@ header p,
   color: #68758a;
   font-size: 13px;
   margin-bottom: 0;
+}
+
+header p {
+  overflow-wrap: anywhere;
 }
 
 main {
@@ -69,7 +84,14 @@ main {
 .row { display: flex; align-items: center; gap: 10px; }
 .spread { justify-content: space-between; align-items: flex-start; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.headerActions { display: flex; align-items: center; gap: 8px; }
+
+.headerActions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .sectionTitle {
   display: flex;
   justify-content: space-between;
@@ -107,11 +129,44 @@ button.danger {
   border-color: #e6bfc3;
 }
 
+.iconButton,
+.smallIconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
 .iconButton {
-  min-width: 36px;
-  padding: 5px 10px;
-  font-size: 22px;
-  line-height: 1;
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: 11px;
+}
+
+.smallIconButton {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  border-radius: 9px;
+}
+
+.iconButton svg,
+.smallIconButton svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.smallIconButton svg {
+  width: 16px;
+  height: 16px;
 }
 
 input {
@@ -142,6 +197,7 @@ button:focus-visible {
   font-weight: 750;
   background: #e8edf4;
   color: #45536a;
+  white-space: nowrap;
 }
 
 .badge.ok { background: #dcf7e7; color: #167344; }
@@ -195,7 +251,10 @@ button:focus-visible {
   border-bottom: 1px solid #dbe2ec;
 }
 
-.chatSessionIdentity { min-width: 0; }
+.chatSessionIdentity {
+  min-width: 0;
+  flex: 1 1 auto;
+}
 
 .chatSessionTitle {
   font-size: 13px;
@@ -209,6 +268,19 @@ button:focus-visible {
   margin-top: 4px;
   color: #7a879a;
   font-size: 10px;
+  line-height: 1.4;
+}
+
+.chatSessionActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.sessionHideButton {
+  color: #64748b;
+  background: rgba(255,255,255,.72);
 }
 
 .chatSessionTasks { padding: 0 12px; }
@@ -228,11 +300,19 @@ button:focus-visible {
   color: #8a95a6;
 }
 
+.compactEmpty {
+  padding: 10px 0;
+  text-align: left;
+  font-size: 12px;
+}
+
 .hidden { display: none !important; }
 form { max-width: 480px; }
 
 dialog {
   width: min(92vw, 520px);
+  max-height: min(82vh, 720px);
+  overflow: auto;
   border: 1px solid #d7dee8;
   border-radius: 18px;
   padding: 0;
@@ -247,10 +327,14 @@ dialog::backdrop {
 }
 
 .dialogHead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   justify-content: space-between;
   gap: 14px;
   padding: 18px;
+  background: #fff;
   border-bottom: 1px solid #e4e9f0;
 }
 
@@ -263,10 +347,83 @@ dialog::backdrop {
 .settingsSection p { margin-bottom: 12px; }
 .settingsDanger { background: #fffafa; }
 
+.hiddenSessionList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hiddenSessionItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid #e0e6ef;
+  border-radius: 11px;
+  background: #f8fafc;
+}
+
+.hiddenSessionInfo {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.hiddenSessionInfo strong {
+  font-size: 12px;
+  color: #273449;
+  overflow-wrap: anywhere;
+}
+
+.hiddenSessionInfo span {
+  font-size: 10px;
+  color: #7a879a;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width:620px) {
-  .spread { flex-direction: column; }
-  header { padding-left: 14px; padding-right: 14px; }
-  main { padding-left: 12px; padding-right: 12px; }
-  .headerActions { gap: 6px; }
-  .headerActions button { padding: 8px 10px; }
+  header {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  h1 {
+    font-size: 18px;
+  }
+
+  header p {
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  main {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .card {
+    padding: 14px;
+  }
+
+  .spread {
+    flex-direction: row;
+  }
+
+  .task .spread {
+    align-items: flex-start;
+  }
+
+  .chatSessionHead {
+    padding: 10px;
+  }
+
+  .chatSessionTasks {
+    padding: 0 10px;
+  }
+
+  .kv {
+    grid-template-columns: minmax(96px, auto) 1fr;
+  }
 }

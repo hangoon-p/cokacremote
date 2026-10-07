@@ -1,4 +1,9 @@
-import { groupTasksBySession, taskDisplayTitle } from "/task-groups.js";
+import {
+  groupTasksBySession,
+  hiddenSessionStillApplies,
+  sessionIsExpired,
+  taskDisplayTitle,
+} from "/task-groups.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -10,9 +15,14 @@ const countEl = $("instanceCount");
 const pushStateEl = $("pushState");
 const settingsButton = $("settings");
 const settingsDialog = $("settingsDialog");
+const hiddenSessionsEl = $("hiddenSessions");
+
+const HIDDEN_SESSIONS_KEY = "cokacremote-hidden-sessions-v1";
 
 let token = localStorage.getItem("cokacremote-dashboard-token") || "";
 let refreshTimer;
+let hiddenSessions = loadHiddenSessions();
+let renderedSessions = new Map();
 
 function esc(value) {
   return String(value ?? "")
@@ -22,13 +32,98 @@ function esc(value) {
     .replaceAll('"', "&quot;");
 }
 
+function loadHiddenSessions() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HIDDEN_SESSIONS_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveHiddenSessions() {
+  localStorage.setItem(HIDDEN_SESSIONS_KEY, JSON.stringify(hiddenSessions));
+}
+
+function hiddenSessionKey(instanceId, sessionKey) {
+  return `${instanceId}::${sessionKey}`;
+}
+
+function hideSession(instanceId, session) {
+  const key = hiddenSessionKey(instanceId, session.sessionKey);
+  hiddenSessions[key] = {
+    instanceId,
+    sessionKey: session.sessionKey,
+    title: session.title,
+    sessionLabel: session.sessionLabel,
+    status: session.status,
+    lastActivityAt: session.lastActivityAt || "",
+    hiddenAt: Date.now(),
+  };
+  saveHiddenSessions();
+}
+
+function restoreHiddenSession(key) {
+  if (!(key in hiddenSessions)) return;
+  delete hiddenSessions[key];
+  saveHiddenSessions();
+}
+
+function isSessionManuallyHidden(instanceId, session) {
+  const key = hiddenSessionKey(instanceId, session.sessionKey);
+  const record = hiddenSessions[key];
+  if (!record) return false;
+
+  if (!hiddenSessionStillApplies(record, session)) {
+    restoreHiddenSession(key);
+    return false;
+  }
+  return true;
+}
+
+function renderHiddenSessions() {
+  const entries = Object.entries(hiddenSessions).sort(
+    ([, a], [, b]) => Number(b.hiddenAt || 0) - Number(a.hiddenAt || 0),
+  );
+
+  hiddenSessionsEl.innerHTML = entries.length
+    ? entries
+        .map(
+          ([key, record]) => `
+            <div class="hiddenSessionItem">
+              <div class="hiddenSessionInfo">
+                <strong>${esc(record.title || "숨긴 세션")}</strong>
+                <span>${esc(record.instanceId || "")} · ${esc(record.sessionLabel || "")}</span>
+              </div>
+              <button
+                class="smallIconButton ghost"
+                type="button"
+                data-restore-session="${esc(key)}"
+                aria-label="세션 다시 표시"
+                title="다시 표시"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/>
+                  <circle cx="12" cy="12" r="2.8"/>
+                </svg>
+              </button>
+            </div>`,
+        )
+        .join("")
+    : '<div class="empty compactEmpty">숨긴 세션이 없습니다.</div>';
+}
+
 function relative(ms) {
   const seconds = Math.max(0, Math.round(ms / 1000));
   if (seconds < 60) return `${seconds}초 전`;
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes}분 전`;
   const hours = Math.round(minutes / 60);
-  return `${hours}시간 전`;
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.round(hours / 24);
+  return `${days}일 전`;
 }
 
 function time(value) {
@@ -78,6 +173,7 @@ function taskHtml(task, now) {
   const inactive = task.lastActivityAt
     ? relative(Math.max(0, now - new Date(task.lastActivityAt).getTime()))
     : "-";
+
   return `
     <div class="task">
       <div class="row spread">
@@ -91,10 +187,11 @@ function taskHtml(task, now) {
     </div>`;
 }
 
-function sessionHtml(session, now) {
+function sessionHtml(instanceId, session, now) {
   const inactive = session.lastActivityAt
     ? relative(Math.max(0, now - new Date(session.lastActivityAt).getTime()))
     : "-";
+
   return `
     <section class="chatSession">
       <div class="chatSessionHead">
@@ -104,7 +201,22 @@ function sessionHtml(session, now) {
             ChatGPT / MCP 세션 ${esc(session.sessionLabel)} · 마지막 활동 ${esc(inactive)}
           </div>
         </div>
-        ${badge(session.status, statusKind(session.status))}
+        <div class="chatSessionActions">
+          ${badge(session.status, statusKind(session.status))}
+          <button
+            class="smallIconButton ghost sessionHideButton"
+            type="button"
+            data-hide-session="${esc(hiddenSessionKey(instanceId, session.sessionKey))}"
+            aria-label="세션 숨기기"
+            title="세션 숨기기"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 3l18 18"/>
+              <path d="M10.6 5.2A10.7 10.7 0 0 1 12 5c6 0 9.5 7 9.5 7a17.5 17.5 0 0 1-3.1 4.1M6.2 6.2C3.8 8 2.5 12 2.5 12s3.5 7 9.5 7c1.6 0 3-.5 4.2-1.1"/>
+              <path d="M9.9 9.9A3 3 0 0 0 14.1 14.1"/>
+            </svg>
+          </button>
+        </div>
       </div>
       <div class="chatSessionTasks">
         ${session.tasks.map((task) => taskHtml(task, now)).join("")}
@@ -119,7 +231,22 @@ function instanceHtml(instance, serverTime) {
   const tunnel = snapshot.tunnel || {};
   const runtime = snapshot.runtime || {};
   const tasks = Array.isArray(monitor.state?.tasks) ? monitor.state.tasks : [];
-  const activeSessions = groupTasksBySession(tasks);
+  const allSessions = groupTasksBySession(tasks);
+
+  const activeSessions = allSessions.filter((session) => {
+    if (sessionIsExpired(session, serverTime)) {
+      restoreHiddenSession(hiddenSessionKey(instance.instanceId, session.sessionKey));
+      return false;
+    }
+    if (isSessionManuallyHidden(instance.instanceId, session)) return false;
+
+    renderedSessions.set(hiddenSessionKey(instance.instanceId, session.sessionKey), {
+      instanceId: instance.instanceId,
+      session,
+    });
+    return true;
+  });
+
   const activeTaskCount = activeSessions.reduce(
     (total, session) => total + session.tasks.length,
     0,
@@ -159,20 +286,31 @@ function instanceHtml(instance, serverTime) {
           <strong>채팅/MCP 세션별 작업 상태</strong>
           <span class="muted">${activeSessions.length}세션 · ${activeTaskCount}작업</span>
         </div>
-        <div class="sessionNote">세션 식별자는 MCP 호출 기준이며 ChatGPT 화면의 채팅방과 항상 1:1로 보장되지는 않습니다. INACTIVE는 최근 MCP 활동이 일정 시간 끊긴 관찰 세션입니다.</div>
-        ${activeSessions.length
-          ? activeSessions.map((session) => sessionHtml(session, serverTime)).join("")
-          : '<div class="empty">진행 중이거나 정지된 작업이 없습니다.</div>'}
+        <div class="sessionNote">
+          INACTIVE 세션은 24시간 후 자동으로 숨겨집니다. 수동으로 숨긴 세션도 새 MCP 활동이 감지되면 자동으로 다시 표시됩니다.
+        </div>
+        ${
+          activeSessions.length
+            ? activeSessions
+                .map((session) => sessionHtml(instance.instanceId, session, serverTime))
+                .join("")
+            : '<div class="empty">표시할 최근 세션이 없습니다.</div>'
+        }
       </div>
     </article>`;
 }
 
 function renderStatus(data) {
   const instances = data.instances || [];
+  renderedSessions = new Map();
+
   countEl.textContent = `${instances.length}대`;
   instancesEl.innerHTML = instances.length
     ? instances.map((instance) => instanceHtml(instance, data.serverTime)).join("")
     : '<div class="empty">아직 heartbeat가 없습니다.</div>';
+
+  renderHiddenSessions();
+
   updatedEl.textContent = `업데이트 ${new Date(data.serverTime).toLocaleTimeString("ko-KR", {
     hour12: false,
   })} · Offline 기준 ${data.offlineAfterSeconds}초`;
@@ -258,14 +396,40 @@ $("authForm").addEventListener("submit", async (event) => {
 });
 
 $("refresh").addEventListener("click", refresh);
+
 settingsButton.addEventListener("click", async () => {
+  renderHiddenSessions();
   settingsDialog.showModal();
   await updatePushState();
 });
+
 $("closeSettings").addEventListener("click", () => settingsDialog.close());
+
 settingsDialog.addEventListener("click", (event) => {
   if (event.target === settingsDialog) settingsDialog.close();
 });
+
+instancesEl.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-hide-session]");
+  if (!button) return;
+
+  const current = renderedSessions.get(button.dataset.hideSession);
+  if (!current) return;
+
+  hideSession(current.instanceId, current.session);
+  renderHiddenSessions();
+  refresh();
+});
+
+hiddenSessionsEl.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-restore-session]");
+  if (!button) return;
+
+  restoreHiddenSession(button.dataset.restoreSession);
+  renderHiddenSessions();
+  refresh();
+});
+
 $("enablePush").addEventListener("click", async () => {
   try {
     await enablePush();
@@ -273,6 +437,7 @@ $("enablePush").addEventListener("click", async () => {
     pushStateEl.textContent = error.message;
   }
 });
+
 $("testPush").addEventListener("click", async () => {
   try {
     await api("/api/push/test", { method: "POST" });
@@ -281,6 +446,7 @@ $("testPush").addEventListener("click", async () => {
     pushStateEl.textContent = error.message;
   }
 });
+
 $("logout").addEventListener("click", () => {
   token = "";
   localStorage.removeItem("cokacremote-dashboard-token");
@@ -297,6 +463,8 @@ if (token) {
   tokenInput.value = token;
   refresh();
 }
+
 serviceWorkerRegistration().catch(() => undefined);
+
 clearInterval(refreshTimer);
 refreshTimer = setInterval(refresh, 15000);

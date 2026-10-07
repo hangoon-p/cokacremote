@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   groupTasksBySession,
+  hiddenSessionStillApplies,
+  sessionIsExpired,
   shortSessionId,
   taskDisplayTitle,
 } from "../public/task-groups.js";
@@ -181,4 +183,68 @@ test("INACTIVE implicit sessions remain visible and rank above OBSERVED", () => 
   assert.equal(groups[0].status, "INACTIVE");
   assert.equal(groups[0].title, "명령 실행 작업");
   assert.equal(groups[1].status, "OBSERVED");
+});
+
+
+test("INACTIVE session expires from the current view after 24 hours", () => {
+  const [session] = groupTasksBySession([
+    {
+      taskId: "inactive-old",
+      chatSession: "session-old",
+      status: "INACTIVE",
+      inactiveAt: "2026-10-06T09:00:00.000Z",
+      lastActivityAt: "2026-10-06T08:57:00.000Z",
+    },
+  ]);
+
+  assert.equal(
+    sessionIsExpired(session, Date.parse("2026-10-07T08:59:59.000Z")),
+    false,
+  );
+  assert.equal(
+    sessionIsExpired(session, Date.parse("2026-10-07T09:00:00.000Z")),
+    true,
+  );
+});
+
+test("manual hide remains while session activity has not changed", () => {
+  const record = {
+    status: "INACTIVE",
+    lastActivityAt: "2026-10-07T09:00:00.000Z",
+  };
+  const session = {
+    status: "INACTIVE",
+    lastActivityAt: "2026-10-07T09:00:00.000Z",
+  };
+
+  assert.equal(hiddenSessionStillApplies(record, session), true);
+});
+
+test("manual hide is cleared when new MCP activity is detected", () => {
+  const record = {
+    status: "INACTIVE",
+    lastActivityAt: "2026-10-07T09:00:00.000Z",
+  };
+
+  assert.equal(
+    hiddenSessionStillApplies(record, {
+      status: "OBSERVED",
+      lastActivityAt: "2026-10-07T09:05:00.000Z",
+    }),
+    false,
+  );
+
+  assert.equal(
+    hiddenSessionStillApplies(
+      {
+        status: "OBSERVED",
+        lastActivityAt: "2026-10-07T09:00:00.000Z",
+      },
+      {
+        status: "OBSERVED",
+        lastActivityAt: "2026-10-07T09:00:01.000Z",
+      },
+    ),
+    false,
+  );
 });

@@ -87,6 +87,38 @@ export function taskDisplayTitle(task) {
   return tool ? `${TOOL_TITLES[tool] || tool} 작업` : "관찰 작업";
 }
 
+export const INACTIVE_DISPLAY_RETENTION_MS = 24 * 60 * 60 * 1000;
+
+export function sessionIsExpired(
+  session,
+  now = Date.now(),
+  retentionMs = INACTIVE_DISPLAY_RETENTION_MS,
+) {
+  if (!session || session.status !== "INACTIVE") return false;
+  const reference = session.inactiveAt || session.lastActivityAt;
+  const timestamp = Date.parse(String(reference || ""));
+  if (!Number.isFinite(timestamp)) return false;
+  return now - timestamp >= retentionMs;
+}
+
+export function hiddenSessionStillApplies(record, session) {
+  if (!record || !session) return false;
+
+  const activeStatuses = new Set(["OBSERVED", "WORKING", "STALLED"]);
+  if (
+    activeStatuses.has(String(session.status || "")) &&
+    String(record.status || "") !== String(session.status || "")
+  ) {
+    return false;
+  }
+
+  const hiddenActivity = Date.parse(String(record.lastActivityAt || ""));
+  const currentActivity = Date.parse(String(session.lastActivityAt || ""));
+  if (!Number.isFinite(currentActivity)) return true;
+  if (!Number.isFinite(hiddenActivity)) return false;
+  return currentActivity <= hiddenActivity;
+}
+
 export function shortSessionId(value) {
   const text = String(value || "").trim();
   if (!text) return "unknown";
@@ -138,6 +170,11 @@ export function groupTasksBySession(tasks, { includeCompleted = false } = {}) {
             : "inferred",
         status: sessionStatus(sortedTasks),
         lastActivityAt: sortedTasks[0]?.lastActivityAt,
+        inactiveAt: sortedTasks
+          .filter((task) => task?.status === "INACTIVE" && task?.inactiveAt)
+          .map((task) => task.inactiveAt)
+          .sort()
+          .at(-1),
         tasks: sortedTasks,
       };
     })
