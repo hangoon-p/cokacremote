@@ -74,18 +74,106 @@ npm run deploy
 
 The Worker and `public/` PWA assets are deployed together. The Cron Trigger runs every minute and checks for missing heartbeats. `OFFLINE_AFTER_SECONDS` defaults to 120 seconds in `wrangler.jsonc`.
 
-## 5. Point a watcher at the deployed API
+## 5. Configure each monitored Cokacremote host
 
-Configure each Cokacremote host:
+After pulling a version that contains the watcher, install/build the root project before restarting the host launcher:
+
+```bash
+npm ci
+npm run build
+```
+
+The compiled watcher entry point is:
 
 ```text
+node dist/src/watcher.js
+```
+
+Create machine-local watcher configuration. The repository `.env.example` documents all supported variables; a typical persistent host uses values equivalent to:
+
+```text
+COKACREMOTE_WATCHER_INSTANCE_ID=<unique-host-id>
+COKACREMOTE_WATCHER_MCP_BASE_URL=http://127.0.0.1:<local-mcp-port>
+COKACREMOTE_WATCHER_RUNTIME_STATE_FILE=<optional-launcher-runtime-state-json>
+COKACREMOTE_WATCHER_INTERVAL_MS=30000
+COKACREMOTE_WATCHER_REQUEST_TIMEOUT_MS=5000
+COKACREMOTE_WATCHER_SNAPSHOT_FILE=<machine-local-snapshot-path>
 COKACREMOTE_WATCHER_REMOTE_URL=https://<worker-domain>/api/heartbeat
 COKACREMOTE_WATCHER_REMOTE_TOKEN=<INGEST_TOKEN>
 ```
 
-Each installation must use a unique `COKACREMOTE_WATCHER_INSTANCE_ID`.
+Each installation **must** use a unique `COKACREMOTE_WATCHER_INSTANCE_ID`. The same deployed Worker/D1 and the same ingest endpoint can receive heartbeats from multiple hosts.
 
-## 6. iPhone PWA / notifications
+Keep the environment file and `INGEST_TOKEN` machine-local. Do not commit them.
+
+Important: `dist/src/watcher.js` reads `process.env`; it does **not** automatically load a file named `.env.watcher`. If a host stores watcher settings in a local env file, its launcher/service manager must load that file and inject those values into the watcher process environment.
+
+## 6. Integrate the watcher into the host launcher/supervisor
+
+For a persistent installation, starting only the MCP server is incomplete. The top-level host launcher/service supervisor should manage the watcher as part of the Cokacremote runtime.
+
+Recommended process model:
+
+```text
+host launcher / tray / service supervisor
+├─ MCP + tunnel launcher/process tree
+└─ watcher: node dist/src/watcher.js
+```
+
+The watcher should be a **sibling managed process**, not a child whose lifetime is tied to the MCP server process. This is important because the watcher must remain alive while the MCP server is restarting or down so it can report that outage to the external dashboard.
+
+Launcher/supervisor requirements:
+
+1. Load the normal MCP environment and the machine-local watcher environment separately.
+2. Start `node dist/src/watcher.js` from the repository/application root after the compiled `dist/` output exists.
+3. Keep the watcher alive even when the MCP server or secure tunnel is temporarily unavailable.
+4. If the watcher exits unexpectedly, restart the watcher independently.
+5. Restarting only the MCP server/tunnel must **not** terminate the watcher.
+6. A full launcher/service shutdown may stop both the MCP/tunnel runtime and watcher.
+7. Keep watcher output in a separate log where possible. A healthy external delivery cycle contains `remote=ok(200)`.
+8. Treat "MCP/tunnel healthy but watcher down" as a degraded host state rather than fully healthy.
+9. After `git pull` changes TypeScript sources, run `npm ci` when dependencies changed and always run `npm run build` before restarting the managed runtime.
+
+Conceptually, a launcher should do the equivalent of:
+
+```text
+watcherEnv = operatingSystemEnvironment + loadMachineLocalWatcherEnv()
+ensureRunning(
+  executable = node,
+  args = ["dist/src/watcher.js"],
+  cwd = applicationRoot,
+  env = watcherEnv
+)
+```
+
+On Windows this can be implemented by the same tray/service supervisor that owns the MCP+tunnel launcher. On Linux it can be a separate systemd unit or another supervisor-managed process. The exact launcher implementation can remain machine-specific; the lifecycle rules above are the required contract.
+
+### One-cycle validation
+
+For troubleshooting, inject the same watcher environment and run one collection/delivery cycle:
+
+```text
+COKACREMOTE_WATCHER_ONCE=1
+node dist/src/watcher.js
+```
+
+A healthy result should report local server/monitor/tunnel state and, when remote delivery is configured, `remote=ok(200)`.
+
+## 7. Add another Cokacremote host to the same dashboard
+
+A new host does **not** require another Worker, D1 database, migration, or dashboard deployment.
+
+For each additional host:
+
+1. Pull the monitored Cokacremote version and build it.
+2. Give the host a new `COKACREMOTE_WATCHER_INSTANCE_ID`.
+3. Point `COKACREMOTE_WATCHER_REMOTE_URL` at the existing `/api/heartbeat` endpoint.
+4. Provision the existing `INGEST_TOKEN` securely as a machine-local secret.
+5. Integrate the watcher into that host's launcher/supervisor using the rules above.
+6. Confirm the watcher log shows `remote=ok(200)`.
+7. Confirm the new instance appears as a separate card in the PWA dashboard.
+
+## 8. iPhone PWA / notifications
 
 1. Open the deployed dashboard URL in Safari.
 2. Add it to the Home Screen.

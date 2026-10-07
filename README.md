@@ -144,6 +144,14 @@ These annotations are advisory client metadata, not access control. They do not 
 - MCP transport sessions and command process `sessionId` values are unrelated. A process `sessionId` returned by `exec_command` can be reused by later HTTP requests to `write_stdin`, `read_process`, and `terminate_process`.
 - Running and retained process state is stored in service memory and is lost when the service restarts.
 
+## Optional activity watcher and external dashboard
+
+This fork can run an independent activity watcher that reports host/MCP/tunnel/task state to the external PWA dashboard under `dashboard/`.
+
+The watcher is intentionally a separate process. Running `npm start` starts the MCP server only; it does **not** start `dist/src/watcher.js`. A persistent host launcher, tray application, systemd unit, or other supervisor must also start and supervise the watcher, preferably as a sibling of the MCP/tunnel process tree so MCP restarts do not interrupt monitoring.
+
+See [dashboard/README.md](dashboard/README.md) for the complete Worker/D1 deployment, per-host watcher configuration, launcher integration, multi-host onboarding, and PWA/Web Push guide.
+
 ## Requirements
 
 - Node.js 22 or later and npm
