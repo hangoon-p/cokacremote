@@ -1,14 +1,15 @@
-import { groupTasksBySession } from "/task-groups.js";
+import { groupTasksBySession, taskDisplayTitle } from "/task-groups.js";
 
 const $ = (id) => document.getElementById(id);
 
 const authCard = $("authCard");
-const controls = $("controls");
 const tokenInput = $("token");
 const instancesEl = $("instances");
 const updatedEl = $("updated");
 const countEl = $("instanceCount");
 const pushStateEl = $("pushState");
+const settingsButton = $("settings");
+const settingsDialog = $("settingsDialog");
 
 let token = localStorage.getItem("cokacremote-dashboard-token") || "";
 let refreshTimer;
@@ -73,7 +74,7 @@ function statusKind(status) {
 
 function taskHtml(task, now) {
   const status = task.status || "UNKNOWN";
-  const title = task.title || task.userRequest || task.taskId || "작업";
+  const title = taskDisplayTitle(task);
   const inactive = task.lastActivityAt
     ? relative(Math.max(0, now - new Date(task.lastActivityAt).getTime()))
     : "-";
@@ -158,7 +159,7 @@ function instanceHtml(instance, serverTime) {
           <strong>채팅/MCP 세션별 작업 상태</strong>
           <span class="muted">${activeSessions.length}세션 · ${activeTaskCount}작업</span>
         </div>
-        <div class="sessionNote">세션 식별자는 MCP 호출 기준이며 ChatGPT 화면의 채팅방과 항상 1:1로 보장되지는 않습니다.</div>
+        <div class="sessionNote">세션 식별자는 MCP 호출 기준이며 ChatGPT 화면의 채팅방과 항상 1:1로 보장되지는 않습니다. INACTIVE는 최근 MCP 활동이 일정 시간 끊긴 관찰 세션입니다.</div>
         ${activeSessions.length
           ? activeSessions.map((session) => sessionHtml(session, serverTime)).join("")
           : '<div class="empty">진행 중이거나 정지된 작업이 없습니다.</div>'}
@@ -182,14 +183,14 @@ async function refresh() {
   try {
     const status = await api("/api/status");
     authCard.classList.add("hidden");
-    controls.classList.remove("hidden");
+    settingsButton.classList.remove("hidden");
     renderStatus(status);
-    await updatePushState();
   } catch (error) {
     updatedEl.textContent = error.message;
     if (error.message.includes("Token")) {
       authCard.classList.remove("hidden");
-      controls.classList.add("hidden");
+      settingsButton.classList.add("hidden");
+      if (settingsDialog.open) settingsDialog.close();
     }
   }
 }
@@ -257,6 +258,14 @@ $("authForm").addEventListener("submit", async (event) => {
 });
 
 $("refresh").addEventListener("click", refresh);
+settingsButton.addEventListener("click", async () => {
+  settingsDialog.showModal();
+  await updatePushState();
+});
+$("closeSettings").addEventListener("click", () => settingsDialog.close());
+settingsDialog.addEventListener("click", (event) => {
+  if (event.target === settingsDialog) settingsDialog.close();
+});
 $("enablePush").addEventListener("click", async () => {
   try {
     await enablePush();
@@ -276,9 +285,11 @@ $("logout").addEventListener("click", () => {
   token = "";
   localStorage.removeItem("cokacremote-dashboard-token");
   tokenInput.value = "";
-  controls.classList.add("hidden");
+  settingsButton.classList.add("hidden");
+  if (settingsDialog.open) settingsDialog.close();
   authCard.classList.remove("hidden");
   instancesEl.innerHTML = "";
+  countEl.textContent = "";
   updatedEl.textContent = "로그아웃됨";
 });
 

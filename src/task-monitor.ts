@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 
 import type { ProcessManager } from "./process-manager.js";
 
-export type TaskStatus = "OBSERVED" | "WORKING" | "COMPLETED" | "STALLED";
+export type TaskStatus =
+  | "OBSERVED"
+  | "INACTIVE"
+  | "WORKING"
+  | "COMPLETED"
+  | "STALLED";
 
 export interface TaskSnapshot {
   taskId: string;
@@ -15,6 +20,8 @@ export interface TaskSnapshot {
   startedAt: string;
   lastActivityAt: string;
   completedAt: string | undefined;
+  inactiveAt: string | undefined;
+  inactiveReason: string | undefined;
   stalledAt: string | undefined;
   stalledReason: string | undefined;
   lastTool: string | undefined;
@@ -39,6 +46,8 @@ interface TaskRecord {
   startedAt: number;
   lastActivityAt: number;
   completedAt: number | undefined;
+  inactiveAt: number | undefined;
+  inactiveReason: string | undefined;
   stalledAt: number | undefined;
   stalledReason: string | undefined;
   lastTool: string | undefined;
@@ -121,12 +130,14 @@ export class TaskMonitor {
       return this.#snapshot(existing);
     }
 
-    if (existing?.status === "OBSERVED") {
+    if (existing?.status === "OBSERVED" || existing?.status === "INACTIVE") {
       existing.status = "WORKING";
       existing.explicitStart = true;
       existing.userRequest = userRequest;
       existing.title = title?.trim() || existing.title;
       existing.lastActivityAt = now;
+      existing.inactiveAt = undefined;
+      existing.inactiveReason = undefined;
       this.#emitState(existing, "task_begin_late");
       return this.#snapshot(existing);
     }
@@ -147,6 +158,13 @@ export class TaskMonitor {
   toolStarted(chatSession: string, toolName: string): TaskSnapshot {
     const now = Date.now();
     let task = this.#currentBySession.get(chatSession);
+    if (task?.status === "INACTIVE" && !task.explicitStart) {
+      task.status = "OBSERVED";
+      task.inactiveAt = undefined;
+      task.inactiveReason = undefined;
+      task.lastActivityAt = now;
+      this.#emitState(task, "implicit_activity_resumed");
+    }
     if (!task || (task.status !== "WORKING" && task.status !== "OBSERVED")) {
       task = this.#createTask(chatSession, now, { explicitStart: false });
       this.#emitState(task, "implicit_task_start");
@@ -230,7 +248,7 @@ export class TaskMonitor {
       }
       if (now - task.lastActivityAt >= this.#stallMs) {
         if (task.status === "OBSERVED") {
-          this.#completeObserved(task, now);
+          this.#markInactive(task, now, "inactivity_timeout");
         } else {
           this.#markStalled(task, now, "inactivity_timeout");
         }
@@ -271,6 +289,8 @@ export class TaskMonitor {
       startedAt: now,
       lastActivityAt: now,
       completedAt: undefined,
+      inactiveAt: undefined,
+      inactiveReason: undefined,
       stalledAt: undefined,
       stalledReason: undefined,
       lastTool: undefined,
@@ -315,14 +335,14 @@ export class TaskMonitor {
     return { runningProcesses, lastProcessActivityAt };
   }
 
-  #completeObserved(task: TaskRecord, now: number): void {
+  #markInactive(task: TaskRecord, now: number, reason: string): void {
     if (task.status !== "OBSERVED") {
       return;
     }
-    task.status = "COMPLETED";
-    task.completedAt = now;
-    task.lastActivityAt = Math.max(task.lastActivityAt, now);
-    this.#emitState(task, "implicit_activity_idle");
+    task.status = "INACTIVE";
+    task.inactiveAt = now;
+    task.inactiveReason = reason;
+    this.#emitState(task, "implicit_activity_inactive");
   }
 
   #markStalled(task: TaskRecord, now: number, reason: string): void {
@@ -348,6 +368,8 @@ export class TaskMonitor {
       startedAt: new Date(task.startedAt).toISOString(),
       lastActivityAt: new Date(task.lastActivityAt).toISOString(),
       completedAt: iso(task.completedAt),
+      inactiveAt: iso(task.inactiveAt),
+      inactiveReason: task.inactiveReason,
       stalledAt: iso(task.stalledAt),
       stalledReason: task.stalledReason,
       lastTool: task.lastTool,
@@ -371,6 +393,7 @@ export class TaskMonitor {
       startedAt: snapshot.startedAt,
       lastActivityAt: snapshot.lastActivityAt,
       completedAt: snapshot.completedAt,
+      inactiveAt: snapshot.inactiveAt,
       stalledAt: snapshot.stalledAt,
       activeCalls: snapshot.activeCalls,
       trackedProcesses: snapshot.trackedProcesses,

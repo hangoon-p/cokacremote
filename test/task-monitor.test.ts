@@ -101,7 +101,7 @@ describe("TaskMonitor", () => {
     expect(monitor.getState().tasks).toHaveLength(1);
   });
 
-  it("closes implicit activity as COMPLETED instead of raising a false STALLED alert", () => {
+  it("keeps implicit activity visible as INACTIVE instead of completing it", () => {
     manager = createManager();
     const events: Record<string, unknown>[] = [];
     const monitor = new TaskMonitor(manager, {
@@ -116,15 +116,43 @@ describe("TaskMonitor", () => {
     monitor.refresh(lastActivity + 1000);
 
     expect(monitor.current("chat-a")).toMatchObject({
-      status: "COMPLETED",
+      status: "INACTIVE",
       explicitStart: false,
+      inactiveReason: "inactivity_timeout",
       stalledAt: undefined,
       stalledReason: undefined,
     });
     expect(events.map((event) => event.reason)).toEqual([
       "implicit_task_start",
-      "implicit_activity_idle",
+      "implicit_activity_inactive",
     ]);
+  });
+
+  it("resumes an INACTIVE implicit session as OBSERVED when MCP activity returns", () => {
+    manager = createManager();
+    const events: Record<string, unknown>[] = [];
+    const monitor = new TaskMonitor(manager, {
+      stallMs: 1000,
+      emit: (event) => events.push(event),
+    });
+
+    const started = monitor.toolStarted("chat-a", "read_file");
+    monitor.toolFinished("chat-a", "read_file", "completed");
+    const lastActivity = Date.parse(monitor.current("chat-a")!.lastActivityAt);
+    monitor.refresh(lastActivity + 1000);
+
+    const resumed = monitor.toolStarted("chat-a", "write_file");
+    expect(resumed).toMatchObject({
+      taskId: started.taskId,
+      status: "OBSERVED",
+      explicitStart: false,
+      inactiveAt: undefined,
+      inactiveReason: undefined,
+      lastTool: "write_file",
+    });
+    monitor.toolFinished("chat-a", "write_file", "completed");
+    expect(monitor.getState().tasks).toHaveLength(1);
+    expect(events.map((event) => event.reason)).toContain("implicit_activity_resumed");
   });
 
   it("refuses task_complete for unbracketed implicit activity", () => {

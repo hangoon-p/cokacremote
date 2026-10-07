@@ -20,7 +20,7 @@ export function registerTaskTools(
     {
       title: "Begin monitored work",
       description:
-        "Start monitoring the current user-requested work sequence. Call this exactly once before the first operational Cokacremote tool call for a new user request. Pass the user's current instruction in userRequest so the dashboard can identify the work. Repeated identical calls are idempotent.",
+        "Start monitoring the current user-requested work sequence. Call this exactly once before the first operational Cokacremote tool call for a new user request. Pass the user's current instruction in userRequest and provide a short, specific, human-readable title in the user's language so the dashboard can identify the work. Repeated identical calls are idempotent.",
       inputSchema: {
         userRequest: z
           .string()
@@ -32,7 +32,7 @@ export function registerTaskTools(
           .min(1)
           .max(200)
           .optional()
-          .describe("Optional short task title suitable for a dashboard."),
+          .describe("Short task title suitable for a dashboard; normally provide this even though the field remains optional for compatibility."),
       },
       annotations: TOOL_ANNOTATIONS.additiveIdempotentClosed,
       _meta: authMetadata,

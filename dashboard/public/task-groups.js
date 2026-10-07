@@ -1,8 +1,32 @@
 const STATUS_PRIORITY = {
-  STALLED: 4,
-  WORKING: 3,
+  STALLED: 5,
+  WORKING: 4,
+  INACTIVE: 3,
   OBSERVED: 2,
   COMPLETED: 1,
+};
+
+const TOOL_TITLES = {
+  exec_command: "명령 실행",
+  run_script: "스크립트 실행",
+  read_process: "실행 상태 확인",
+  write_stdin: "프로세스 입력",
+  terminate_process: "프로세스 종료",
+  list_processes: "프로세스 확인",
+  read_file: "파일 확인",
+  write_file: "파일 작성",
+  replace_in_file: "파일 수정",
+  apply_patch: "코드 패치",
+  list_directory: "폴더 확인",
+  stat_path: "파일 정보 확인",
+  make_directory: "폴더 생성",
+  copy_path: "파일 복사",
+  move_path: "파일 이동",
+  remove_path: "파일 삭제",
+  chmod_path: "권한 변경",
+  upload_file: "파일 업로드",
+  download_file: "파일 다운로드",
+  hash_file: "파일 검증",
 };
 
 function taskActivityTime(task) {
@@ -39,6 +63,30 @@ function representativeTask(tasks) {
   })[0];
 }
 
+function compactText(value, maxLength = 42) {
+  const text = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
+function inferredTitle(tasks) {
+  const tool = tasks.find((task) => task?.lastTool)?.lastTool;
+  if (!tool) return "제목 없는 MCP 작업";
+  return `${TOOL_TITLES[tool] || tool} 작업`;
+}
+
+export function taskDisplayTitle(task) {
+  const explicitTitle = compactText(task?.title, 48);
+  if (explicitTitle) return explicitTitle;
+  const requestTitle = compactText(task?.userRequest, 42);
+  if (requestTitle) return requestTitle;
+  const tool = task?.lastTool;
+  return tool ? `${TOOL_TITLES[tool] || tool} 작업` : "관찰 작업";
+}
+
 export function shortSessionId(value) {
   const text = String(value || "").trim();
   if (!text) return "unknown";
@@ -70,19 +118,24 @@ export function groupTasksBySession(tasks, { includeCompleted = false } = {}) {
         (a, b) => taskActivityTime(b) - taskActivityTime(a),
       );
       const representative = representativeTask(sortedTasks);
-      const title =
-        representative?.title ||
-        representative?.userRequest ||
-        (sessionKey === "__unknown__"
+      const explicitTitle = compactText(representative?.title, 48);
+      const requestTitle = compactText(representative?.userRequest, 42);
+      const fallbackTitle =
+        sessionKey === "__unknown__"
           ? "세션 식별 정보 없음"
-          : `MCP 세션 ${shortSessionId(sessionKey)}`);
+          : inferredTitle(sortedTasks);
       return {
         sessionKey,
         sessionLabel:
           sessionKey === "__unknown__"
             ? "unknown"
             : shortSessionId(sessionKey),
-        title: String(title).slice(0, 160),
+        title: explicitTitle || requestTitle || fallbackTitle,
+        titleSource: explicitTitle
+          ? "title"
+          : requestTitle
+            ? "request"
+            : "inferred",
         status: sessionStatus(sortedTasks),
         lastActivityAt: sortedTasks[0]?.lastActivityAt,
         tasks: sortedTasks,

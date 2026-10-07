@@ -87,3 +87,29 @@ test("watcher snapshot validation rejects malformed input", () => {
 test("offline notification includes heartbeat age", () => {
   assert.match(offlineMessage("office-native", 125000).body, /125s/);
 });
+
+
+test("INACTIVE implicit activity remains visible telemetry without becoming a push alert", () => {
+  const base = summarizeSnapshot(snapshot());
+  const inactive = summarizeSnapshot(
+    snapshot({
+      monitor: {
+        ok: true,
+        state: {
+          tasks: [
+            {
+              taskId: "implicit-a",
+              status: "INACTIVE",
+              explicitStart: false,
+              lastTool: "exec_command",
+            },
+          ],
+        },
+      },
+    }),
+  );
+
+  assert.equal(isHealthy(inactive), true);
+  assert.deepEqual(inactive.stalledTasks, []);
+  assert.equal(statusKey(inactive), statusKey(base));
+});
