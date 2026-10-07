@@ -42,3 +42,7 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Cloudflare local state and development secrets
+.wrangler/
+.dev.vars*

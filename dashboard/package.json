@@ -1,0 +1,20 @@
+{
+  "name": "cokacremote-monitor-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node node_modules/wrangler/bin/wrangler.js dev --test-scheduled",
+    "deploy": "node node_modules/wrangler/bin/wrangler.js deploy",
+    "deploy:dry": "node node_modules/wrangler/bin/wrangler.js deploy --dry-run",
+    "test": "node --test test/*.test.js",
+    "d1:local": "node node_modules/wrangler/bin/wrangler.js d1 migrations apply DB --local",
+    "d1:remote": "node node_modules/wrangler/bin/wrangler.js d1 migrations apply DB --remote"
+  },
+  "dependencies": {
+    "@block65/webcrypto-web-push": "2.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "4.148.0"
+  }
+}
