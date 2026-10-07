@@ -12,7 +12,7 @@
     {
       "binding": "DB",
       "database_name": "cokacremote-monitor",
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "database_id": "09dc0c9e-2746-4f89-bda6-61491cc67963"
     }
   ],
   "triggers": {
