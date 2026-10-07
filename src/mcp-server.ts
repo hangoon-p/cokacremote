@@ -5,26 +5,32 @@ import { registerExecTools } from "./exec-tools.js";
 import { FileService } from "./file-service.js";
 import { registerFileTools } from "./file-tools.js";
 import { ProcessManager } from "./process-manager.js";
+import { TaskMonitor } from "./task-monitor.js";
+import { registerTaskTools } from "./task-tools.js";
 
 export interface McpServices {
   processManager: ProcessManager;
   fileService: FileService;
+  taskMonitor: TaskMonitor;
 }
 
 export function createServices(config: AppConfig): McpServices {
+  const processManager = new ProcessManager({
+    maxRetainedOutputBytes: config.maxRetainedProcessOutputBytes,
+    processRetentionMs: config.processRetentionMs,
+    maxProcesses: config.maxProcesses,
+    defaultMaxOutputBytes: config.maxOutputBytes,
+  });
+  const fileService = new FileService({
+    defaultCwd: config.defaultCwd,
+    maxChunkBytes: config.maxFileChunkBytes,
+    maxEditFileBytes: config.maxEditFileBytes,
+    maxOutputBytes: config.maxOutputBytes,
+  });
   return {
-    processManager: new ProcessManager({
-      maxRetainedOutputBytes: config.maxRetainedProcessOutputBytes,
-      processRetentionMs: config.processRetentionMs,
-      maxProcesses: config.maxProcesses,
-      defaultMaxOutputBytes: config.maxOutputBytes,
-    }),
-    fileService: new FileService({
-      defaultCwd: config.defaultCwd,
-      maxChunkBytes: config.maxFileChunkBytes,
-      maxEditFileBytes: config.maxEditFileBytes,
-      maxOutputBytes: config.maxOutputBytes,
-    }),
+    processManager,
+    fileService,
+    taskMonitor: new TaskMonitor(processManager, { stallMs: config.taskStallMs }),
   };
 }
 
@@ -36,16 +42,18 @@ export function createMcpServer(config: AppConfig, services: McpServices): McpSe
     },
     {
       instructions:
-        "This server is an unrestricted remote development environment. Tools operate directly on the host with the MCP service process's full OS permissions. Use exec_command for shell, build, test, package, Git, service, and log workflows; run_script for complete Bash, Node.js, or Python scripts; and the file tools for direct file operations. Poll long-running commands with read_process or write_stdin.",
+        "This server is an unrestricted remote development environment. Tools operate directly on the host with the MCP service process's full OS permissions. Use exec_command for shell, build, test, package, Git, service, and log workflows; run_script for complete Bash, Node.js, or Python scripts; and the file tools for direct file operations. Poll long-running commands with read_process or write_stdin. For each new user-requested work sequence that will use Cokacremote tools, call task_begin exactly once before the first operational tool call and include the current user's request. After all host-side work and verification are finished, call task_complete immediately before composing the final user-facing response. Never call task_complete while work or a tracked process remains.",
       capabilities: { logging: {} },
     },
   );
 
+  registerTaskTools(server, config, services.taskMonitor);
   registerExecTools(
     server,
     config,
     services.processManager,
     services.fileService,
+    services.taskMonitor,
   );
   registerFileTools(server, config, services.fileService);
   return server;

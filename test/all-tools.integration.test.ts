@@ -29,6 +29,8 @@ const ALL_TOOLS = [
   "replace_in_file",
   "run_script",
   "stat_path",
+  "task_begin",
+  "task_complete",
   "terminate_process",
   "upload_file",
   "write_file",
@@ -55,6 +57,8 @@ const EXPECTED_ANNOTATIONS = {
   replace_in_file: [false, true, false, false],
   run_script: [false, true, false, true],
   stat_path: [true, false, true, false],
+  task_begin: [false, false, true, false],
+  task_complete: [false, false, true, false],
   terminate_process: [false, true, false, false],
   upload_file: [false, true, true, false],
   write_file: [false, true, false, false],
@@ -89,13 +93,18 @@ describe.sequential("all registered MCP tools", () => {
   let client: Client;
   let transport: StreamableHTTPClientTransport;
   const exercised = new Set<ToolName>();
+  const monitorSession = "all-tools-e2e-chat-session";
 
   const call = async (
     name: ToolName,
     arguments_: Record<string, unknown> = {},
   ): Promise<ToolResult> => {
     exercised.add(name);
-    return client.callTool({ name, arguments: arguments_ });
+    return client.callTool({
+      name,
+      arguments: arguments_,
+      _meta: { "openai/session": monitorSession },
+    });
   };
 
   const callOk = async (
@@ -154,6 +163,10 @@ describe.sequential("all registered MCP tools", () => {
       requestInit: { headers: { authorization: `Bearer ${authToken}` } },
     });
     await client.connect(transport);
+    await callOk("task_begin", {
+      userRequest: "Exercise every published Cokacremote MCP tool",
+      title: "All-tools integration test",
+    });
     await callOk("make_directory", {
       path: testRoot,
       recursive: true,
@@ -837,7 +850,8 @@ describe.sequential("all registered MCP tools", () => {
     })).toMatchObject({ removed: true });
   }, 30_000);
 
-  it("exercises every published tool through MCP", () => {
+  it("exercises every published tool through MCP", async () => {
+    await callOk("task_complete", { summary: "All published tools exercised." });
     expect([...exercised].sort()).toEqual([...ALL_TOOLS]);
   });
 });

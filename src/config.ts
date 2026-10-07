@@ -24,6 +24,7 @@ export interface AppConfig {
   maxRetainedProcessOutputBytes: number;
   processRetentionMs: number;
   maxProcesses: number;
+  taskStallMs: number;
   maxFileChunkBytes: number;
   maxEditFileBytes: number;
 }
@@ -202,6 +203,12 @@ export function loadConfig(
       128,
       "MCP_MAX_PROCESSES",
       1,
+    ),
+    taskStallMs: parseInteger(
+      env.MCP_TASK_STALL_MS,
+      3 * 60 * 1000,
+      "MCP_TASK_STALL_MS",
+      1000,
     ),
     maxFileChunkBytes: parseInteger(
       env.MCP_MAX_FILE_CHUNK_BYTES,

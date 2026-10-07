@@ -4,6 +4,7 @@ import * as z from "zod/v4";
 import type { AppConfig } from "./config.js";
 import { FileService } from "./file-service.js";
 import { ProcessManager } from "./process-manager.js";
+import { chatSessionFromMeta, type TaskMonitor } from "./task-monitor.js";
 import { runScript } from "./script-runner.js";
 import { runTool } from "./tool-result.js";
 import { TOOL_ANNOTATIONS, toolAuthMetadata } from "./tool-metadata.js";
@@ -20,6 +21,7 @@ export function registerExecTools(
   config: AppConfig,
   processManager: ProcessManager,
   fileService: FileService,
+  taskMonitor: TaskMonitor,
 ): void {
   const authMetadata = toolAuthMetadata(config);
   const environmentSchema = z
@@ -101,7 +103,7 @@ export function registerExecTools(
       timeoutMs,
       yieldTimeMs,
       maxOutputBytes,
-    }) =>
+    }, extra) =>
       runTool(async () => {
         const cwd = fileService.resolve(".", workdir);
         const executable = shell || config.defaultShell;
@@ -114,6 +116,10 @@ export function registerExecTools(
           timeoutMs,
           stdin,
         });
+        const chatSession = chatSessionFromMeta(extra._meta, extra.sessionId);
+        if (chatSession) {
+          taskMonitor.trackProcess(chatSession, sessionId);
+        }
         await processManager.waitForExit(sessionId, yieldTimeMs);
         const result = await processManager.read(sessionId, {
           maxOutputBytes,
@@ -183,7 +189,7 @@ export function registerExecTools(
       yieldTimeMs,
       maxOutputBytes,
       keepScript,
-    }) =>
+    }, extra) =>
       runTool(async () => {
         const result = await runScript(processManager, {
           runtime,
@@ -199,6 +205,10 @@ export function registerExecTools(
           maxOutputBytes,
           keepScript,
         });
+        const chatSession = chatSessionFromMeta(extra._meta, extra.sessionId);
+        if (chatSession) {
+          taskMonitor.trackProcess(chatSession, result.sessionId);
+        }
         return processResult(result);
       }),
   );

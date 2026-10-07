@@ -14,6 +14,7 @@ import type { AppConfig } from "./config.js";
 import { errorMessage } from "./errors.js";
 import { createMcpServer, type McpServices } from "./mcp-server.js";
 import { OAUTH_SCOPES, RemoteDevOAuthProvider } from "./oauth.js";
+import { TASK_LIFECYCLE_TOOLS } from "./task-tools.js";
 
 interface ActiveRequest {
   server: ReturnType<typeof createMcpServer>;
@@ -50,6 +51,34 @@ function rpcToolName(body: unknown): string | undefined {
   }
   const name = (params as { name?: unknown }).name;
   return typeof name === "string" ? name : undefined;
+}
+
+function rpcParams(body: unknown): Record<string, unknown> | undefined {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return undefined;
+  }
+  const params = (body as { params?: unknown }).params;
+  return params && typeof params === "object" && !Array.isArray(params)
+    ? (params as Record<string, unknown>)
+    : undefined;
+}
+
+function rpcOpenAiSession(body: unknown): string | undefined {
+  const meta = rpcParams(body)?._meta;
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
+    return undefined;
+  }
+  const session = (meta as Record<string, unknown>)["openai/session"];
+  return typeof session === "string" && session.trim() ? session.trim() : undefined;
+}
+
+function rpcProcessSessionId(body: unknown): string | undefined {
+  const arguments_ = rpcParams(body)?.arguments;
+  if (!arguments_ || typeof arguments_ !== "object" || Array.isArray(arguments_)) {
+    return undefined;
+  }
+  const sessionId = (arguments_ as Record<string, unknown>).sessionId;
+  return typeof sessionId === "string" && sessionId.trim() ? sessionId.trim() : undefined;
 }
 
 export async function startHttpServer(
@@ -140,6 +169,7 @@ export async function startHttpServer(
   const parseMcpJson = express.json({ limit: config.maxRequestBody });
 
   app.get("/health", (_request, response) => {
+    const monitor = services.taskMonitor.refresh();
     response.json({
       status: "ok",
       service: "cokacremote",
@@ -148,9 +178,15 @@ export async function startHttpServer(
       activeMcpSessions: 0,
       activeMcpRequests,
       managedProcesses: services.processManager.list().length,
+      monitoredWorkingTasks: monitor.tasks.filter((task) => task.status === "WORKING").length,
+      monitoredStalledTasks: monitor.tasks.filter((task) => task.status === "STALLED").length,
       unrestrictedHostAccess: true,
       oauthEnabled: config.oauthEnabled,
     });
+  });
+
+  app.get("/monitor", authenticate, (_request, response) => {
+    response.set("Cache-Control", "no-store").json(services.taskMonitor.refresh());
   });
 
   const postHandler = async (request: Request, response: Response): Promise<void> => {
@@ -196,10 +232,50 @@ export async function startHttpServer(
     rpcError(response, 405, "Stateless MCP accepts POST requests only");
   };
 
+  const trackToolActivity = (
+    request: Request,
+    response: Response,
+    next: express.NextFunction,
+  ): void => {
+    const toolName = rpcToolName(request.body);
+    const chatSession = rpcOpenAiSession(request.body);
+    if (
+      !toolName ||
+      !chatSession ||
+      TASK_LIFECYCLE_TOOLS.has(toolName)
+    ) {
+      next();
+      return;
+    }
+
+    services.taskMonitor.toolStarted(chatSession, toolName);
+    const processSessionId = rpcProcessSessionId(request.body);
+    if (processSessionId) {
+      services.taskMonitor.trackProcess(chatSession, processSessionId);
+    }
+
+    let finished = false;
+    const finish = (outcome: "completed" | "aborted") => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      services.taskMonitor.toolFinished(chatSession, toolName, outcome);
+    };
+    response.once("finish", () => finish("completed"));
+    response.once("close", () => {
+      if (!response.writableEnded) {
+        finish("aborted");
+      }
+    });
+    next();
+  };
+
   app.post(
     config.endpoint,
     authenticate,
     parseMcpJson,
+    trackToolActivity,
     (request, response) => {
       void postHandler(request, response);
     },
@@ -225,6 +301,14 @@ export async function startHttpServer(
   }, Math.min(config.processRetentionMs, 60_000));
   cleanupInterval.unref();
 
+  const monitorInterval = setInterval(
+    () => {
+      services.taskMonitor.refresh();
+    },
+    Math.min(5000, Math.max(1000, Math.floor(config.taskStallMs / 4))),
+  );
+  monitorInterval.unref();
+
   const httpServer = await new Promise<HttpServer>((resolve, reject) => {
     const listeningServer = app.listen(config.port, config.host, () => resolve(listeningServer));
     listeningServer.once("error", reject);
@@ -232,6 +316,7 @@ export async function startHttpServer(
 
   const close = async (): Promise<void> => {
     clearInterval(cleanupInterval);
+    clearInterval(monitorInterval);
     const requests = [...activeRequests];
     activeRequests.clear();
     activeMcpRequests = 0;
