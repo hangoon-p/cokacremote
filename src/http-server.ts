@@ -108,6 +108,9 @@ export async function startHttpServer(
         JSON.stringify({
           event: "mcp_request",
           requestId,
+          upstreamRequestId: request.get("x-request-id") || undefined,
+          upstreamOpenAiSession: request.get("x-openai-session") || undefined,
+          metaOpenAiSession: rpcOpenAiSession(request.body),
           httpMethod: request.method,
           rpcMethod: rpcMethod(request.body),
           toolName: rpcToolName(request.body),
