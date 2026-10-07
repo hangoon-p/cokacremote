@@ -277,8 +277,6 @@ function instanceHtml(instance, serverTime) {
       <div class="kv">
         <span>마지막 heartbeat</span><b>${esc(time(instance.lastSeenAt))}</b>
         <span>Runtime phase</span><b>${esc(runtime.phase || "-")}</b>
-        <span>MCP 요청</span><b>${esc(server.health?.activeMcpRequests ?? "-")}</b>
-        <span>관리 프로세스</span><b>${esc(server.health?.managedProcesses ?? "-")}</b>
         <span>Watcher 수집</span><b>${esc(time(snapshot.collectedAt))}</b>
       </div>
       <div class="tasks">
