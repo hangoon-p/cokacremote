@@ -182,56 +182,128 @@ describe("TaskMonitor", () => {
     });
   });
 
-  it("does not stall while a tracked managed process is still running", async () => {
+  it("marks explicit work STALLED despite a detached process still running", () => {
     manager = createManager();
     const monitor = new TaskMonitor(manager, { stallMs: 1000, emit: () => {} });
-    monitor.begin("chat-a", "Run a background process");
-
-    const sessionId = manager.start({
+    monitor.begin("chat-a", "Launch a persistent service");
+    const processId = manager.start({
       executable: process.execPath,
-      args: ["-e", "setTimeout(() => {}, 250)"],
-      commandForDisplay: "background test process",
+      args: ["-e", "setInterval(() => {}, 1000)"],
+      commandForDisplay: "persistent test server",
       cwd: process.cwd(),
     });
-    monitor.trackProcess("chat-a", sessionId);
-
-    monitor.refresh(Date.now() + 10_000);
-    expect(monitor.current("chat-a")).toMatchObject({
-      status: "WORKING",
-      runningProcesses: 1,
-    });
-
-    await manager.waitForExit(sessionId, 2000);
-    const ended = manager.list().find((process) => process.sessionId === sessionId);
-    expect(ended?.endedAt).toEqual(expect.any(String));
-
-    monitor.refresh(Date.parse(ended!.endedAt!) + 1001);
+    monitor.trackProcess("chat-a", processId);
+    const lastActivity = Date.parse(monitor.current("chat-a")!.lastActivityAt);
+    monitor.refresh(lastActivity + 1000);
     expect(monitor.current("chat-a")).toMatchObject({
       status: "STALLED",
-      runningProcesses: 0,
       stalledReason: "inactivity_timeout",
+      runningProcesses: 1,
     });
   });
 
-  it("refuses completion while a tracked managed process is running", async () => {
+  it("marks an implicit session INACTIVE with a persistent managed process", () => {
     manager = createManager();
     const monitor = new TaskMonitor(manager, { stallMs: 1000, emit: () => {} });
-    monitor.begin("chat-a", "Run and verify a process");
-
-    const sessionId = manager.start({
+    const created = monitor.toolStarted("chat-a", "exec_command");
+    const processId = manager.start({
       executable: process.execPath,
-      args: ["-e", "setTimeout(() => {}, 250)"],
-      commandForDisplay: "completion guard process",
+      args: ["-e", "setInterval(() => {}, 1000)"],
+      commandForDisplay: "persistent test server",
       cwd: process.cwd(),
     });
-    monitor.trackProcess("chat-a", sessionId);
+    monitor.trackProcess("chat-a", processId);
+    monitor.toolFinished("chat-a", "exec_command", "completed");
+    const lastActivity = Date.parse(monitor.current("chat-a")!.lastActivityAt);
+    monitor.refresh(lastActivity + 1000);
+    expect(monitor.current("chat-a")).toMatchObject({
+      taskId: created.taskId,
+      status: "INACTIVE",
+      activeCalls: 0,
+      runningProcesses: 1,
+    });
+    const resumed = monitor.toolStarted("chat-a", "read_process");
+    expect(resumed).toMatchObject({ taskId: created.taskId, status: "OBSERVED" });
+    monitor.toolFinished("chat-a", "read_process", "completed");
+    expect(monitor.getState().tasks).toHaveLength(1);
+  });
 
-    expect(() => monitor.complete("chat-a")).toThrow(
-      "tracked processes are still running",
-    );
+  it("does not count background process exit as fresh MCP activity", async () => {
+    manager = createManager();
+    const monitor = new TaskMonitor(manager, { stallMs: 1000, emit: () => {} });
+    monitor.toolStarted("chat-a", "exec_command");
+    const processId = manager.start({
+      executable: process.execPath,
+      args: ["-e", "setTimeout(() => {}, 300)"],
+      commandForDisplay: "short background process",
+      cwd: process.cwd(),
+    });
+    monitor.trackProcess("chat-a", processId);
+    monitor.toolFinished("chat-a", "exec_command", "completed");
+    const lastCallAt = Date.parse(monitor.current("chat-a")!.lastActivityAt);
+    await manager.waitForExit(processId, 3000);
+    const recordedProcess = manager.list().find((item) => item.sessionId === processId);
+    expect(recordedProcess?.running).toBe(false);
+    expect(Date.parse(recordedProcess!.endedAt!)).toBeGreaterThanOrEqual(lastCallAt);
+    monitor.refresh(lastCallAt + 1000);
+    expect(monitor.current("chat-a")).toMatchObject({
+      status: "INACTIVE",
+      lastActivityAt: new Date(lastCallAt).toISOString(),
+      runningProcesses: 0,
+    });
+  });
 
-    await manager.waitForExit(sessionId, 2000);
-    expect(monitor.complete("chat-a").status).toBe("COMPLETED");
+  it("does not stall while an MCP request remains in flight", () => {
+    manager = createManager();
+    const monitor = new TaskMonitor(manager, { stallMs: 1000, emit: () => {} });
+    monitor.begin("chat-a", "Wait for a long running MCP call");
+    monitor.toolStarted("chat-a", "exec_command");
+    const atStart = Date.parse(monitor.current("chat-a")!.lastActivityAt);
+    monitor.refresh(atStart + 10000);
+    expect(monitor.current("chat-a")).toMatchObject({ status: "WORKING", activeCalls: 1 });
+    expect(() => monitor.complete("chat-a")).toThrow("MCP calls are still running");
+    monitor.toolFinished("chat-a", "exec_command", "completed");
+    const atFinish = Date.parse(monitor.current("chat-a")!.lastActivityAt);
+    monitor.refresh(atFinish + 1000);
+    expect(monitor.current("chat-a")?.status).toBe("STALLED");
+  });
+
+  it("periodic MCP polling keeps a background operation from timing out", () => {
+    manager = createManager();
+    const monitor = new TaskMonitor(manager, { stallMs: 1000, emit: () => {} });
+    monitor.begin("chat-a", "Monitor a background task");
+    for (let i = 0; i < 3; i += 1) {
+      monitor.toolStarted("chat-a", "read_process");
+      monitor.toolFinished("chat-a", "read_process", "completed");
+      const activity = Date.parse(monitor.current("chat-a")!.lastActivityAt);
+      monitor.refresh(activity + 999);
+      expect(monitor.current("chat-a")?.status).toBe("WORKING");
+    }
+    const finalActivity = Date.parse(monitor.current("chat-a")!.lastActivityAt);
+    monitor.refresh(finalActivity + 1000);
+    expect(monitor.current("chat-a")?.status).toBe("STALLED");
+  });
+
+  it("allows task_complete after launching a persistent service", () => {
+    manager = createManager();
+    const monitor = new TaskMonitor(manager, { stallMs: 1000, emit: () => {} });
+    monitor.begin("chat-a", "Launch and verify a service");
+    monitor.toolStarted("chat-a", "exec_command");
+    const processId = manager.start({
+      executable: process.execPath,
+      args: ["-e", "setInterval(() => {}, 1000)"],
+      commandForDisplay: "long-lived server",
+      cwd: process.cwd(),
+    });
+    monitor.trackProcess("chat-a", processId);
+    expect(() => monitor.complete("chat-a")).toThrow("MCP calls are still running");
+    monitor.toolFinished("chat-a", "exec_command", "completed");
+    const completed = monitor.complete("chat-a", "Service is running");
+    expect(completed).toMatchObject({
+      status: "COMPLETED",
+      runningProcesses: 1,
+      summary: "Service is running",
+    });
   });
 
   it("marks unfinished work superseded when a new user request starts in the same conversation", () => {

@@ -218,17 +218,14 @@ export class TaskMonitor {
       );
     }
 
-    const processState = this.#processState(task);
-    if (task.activeCalls > 0 || processState.runningProcesses > 0) {
-      throw new Error(
-        "Cannot mark the task complete while MCP calls or tracked processes are still running.",
-      );
+    if (task.activeCalls > 0) {
+      throw new Error("Cannot mark the task complete while MCP calls are still running.");
     }
 
     const now = Date.now();
     task.status = "COMPLETED";
     task.completedAt = now;
-    task.lastActivityAt = Math.max(task.lastActivityAt, processState.lastProcessActivityAt ?? 0, now);
+    task.lastActivityAt = Math.max(task.lastActivityAt, now);
     task.summary = summary?.trim() || undefined;
     this.#emitState(task, "task_complete");
     return this.#snapshot(task);
@@ -239,11 +236,8 @@ export class TaskMonitor {
       if (task.status !== "WORKING" && task.status !== "OBSERVED") {
         continue;
       }
-      const processState = this.#processState(task);
-      if (processState.lastProcessActivityAt !== undefined) {
-        task.lastActivityAt = Math.max(task.lastActivityAt, processState.lastProcessActivityAt);
-      }
-      if (task.activeCalls > 0 || processState.runningProcesses > 0) {
+      // Detached processes are telemetry; only in-flight MCP calls indicate activity.
+      if (task.activeCalls > 0) {
         continue;
       }
       if (now - task.lastActivityAt >= this.#stallMs) {
@@ -308,16 +302,12 @@ export class TaskMonitor {
     return task;
   }
 
-  #processState(task: TaskRecord): {
-    runningProcesses: number;
-    lastProcessActivityAt: number | undefined;
-  } {
+  #processState(task: TaskRecord): { runningProcesses: number } {
     if (task.processSessionIds.size === 0) {
-      return { runningProcesses: 0, lastProcessActivityAt: undefined };
+      return { runningProcesses: 0 };
     }
     const tracked = new Set(task.processSessionIds);
     let runningProcesses = 0;
-    let lastProcessActivityAt: number | undefined;
     for (const process of this.#processManager.list()) {
       if (!tracked.has(process.sessionId)) {
         continue;
@@ -325,14 +315,8 @@ export class TaskMonitor {
       if (process.running) {
         runningProcesses += 1;
       }
-      const activity = process.endedAt
-        ? Date.parse(process.endedAt)
-        : Date.parse(process.startedAt);
-      if (Number.isFinite(activity)) {
-        lastProcessActivityAt = Math.max(lastProcessActivityAt ?? 0, activity);
-      }
     }
-    return { runningProcesses, lastProcessActivityAt };
+    return { runningProcesses };
   }
 
   #markInactive(task: TaskRecord, now: number, reason: string): void {

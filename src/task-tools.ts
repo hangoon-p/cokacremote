@@ -52,7 +52,7 @@ export function registerTaskTools(
     {
       title: "Complete monitored work",
       description:
-        "Mark MCP-side work for the current user request complete. Call this only after every required Cokacremote action and verification is finished, and immediately before composing the final user-facing response. Do not call it while host-side work or a tracked process is still running.",
+        "Mark MCP-side work for the current user request complete. Call this only after every required Cokacremote action and verification is finished, and immediately before composing the final user-facing response. Do not call it while a required MCP action or its verification is still ongoing. It is valid to complete after launching and verifying an intentionally persistent service; a remaining background process alone is not unfinished ChatGPT work.",
       inputSchema: {
         summary: z
           .string()
