@@ -1,5 +1,12 @@
-const CACHE = "cokacremote-monitor-v2";
-const STATIC = ["/", "/styles.css", "/app.js", "/manifest.webmanifest", "/icon.svg"];
+const CACHE = "cokacremote-monitor-v3";
+const STATIC = [
+  "/",
+  "/styles.css",
+  "/app.js",
+  "/task-groups.js",
+  "/manifest.webmanifest",
+  "/icon.svg",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(STATIC)));

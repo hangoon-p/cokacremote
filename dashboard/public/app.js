@@ -1,3 +1,5 @@
+import { groupTasksBySession } from "/task-groups.js";
+
 const $ = (id) => document.getElementById(id);
 
 const authCard = $("authCard");
@@ -63,9 +65,14 @@ function badge(text, kind) {
   return `<span class="badge ${kind}">${esc(text)}</span>`;
 }
 
+function statusKind(status) {
+  if (status === "COMPLETED") return "ok";
+  if (status === "STALLED") return "bad";
+  return "warn";
+}
+
 function taskHtml(task, now) {
   const status = task.status || "UNKNOWN";
-  const kind = status === "COMPLETED" ? "ok" : status === "STALLED" ? "bad" : "warn";
   const title = task.title || task.userRequest || task.taskId || "작업";
   const inactive = task.lastActivityAt
     ? relative(Math.max(0, now - new Date(task.lastActivityAt).getTime()))
@@ -74,13 +81,34 @@ function taskHtml(task, now) {
     <div class="task">
       <div class="row spread">
         <div class="taskTitle">${esc(String(title).slice(0, 160))}</div>
-        ${badge(status, kind)}
+        ${badge(status, statusKind(status))}
       </div>
       <div class="taskMeta">
         마지막 도구 ${esc(task.lastTool || "-")} · 마지막 활동 ${esc(inactive)}
         ${task.runningProcesses ? ` · 실행 프로세스 ${task.runningProcesses}` : ""}
       </div>
     </div>`;
+}
+
+function sessionHtml(session, now) {
+  const inactive = session.lastActivityAt
+    ? relative(Math.max(0, now - new Date(session.lastActivityAt).getTime()))
+    : "-";
+  return `
+    <section class="chatSession">
+      <div class="chatSessionHead">
+        <div class="chatSessionIdentity">
+          <div class="chatSessionTitle">${esc(session.title)}</div>
+          <div class="chatSessionMeta">
+            ChatGPT / MCP 세션 ${esc(session.sessionLabel)} · 마지막 활동 ${esc(inactive)}
+          </div>
+        </div>
+        ${badge(session.status, statusKind(session.status))}
+      </div>
+      <div class="chatSessionTasks">
+        ${session.tasks.map((task) => taskHtml(task, now)).join("")}
+      </div>
+    </section>`;
 }
 
 function instanceHtml(instance, serverTime) {
@@ -90,9 +118,11 @@ function instanceHtml(instance, serverTime) {
   const tunnel = snapshot.tunnel || {};
   const runtime = snapshot.runtime || {};
   const tasks = Array.isArray(monitor.state?.tasks) ? monitor.state.tasks : [];
-  const activeTasks = tasks
-    .filter((task) => task.status !== "COMPLETED")
-    .sort((a, b) => String(b.lastActivityAt || "").localeCompare(String(a.lastActivityAt || "")));
+  const activeSessions = groupTasksBySession(tasks);
+  const activeTaskCount = activeSessions.reduce(
+    (total, session) => total + session.tasks.length,
+    0,
+  );
 
   const tunnelUnknown = tunnel.source === "none" || !tunnel.source;
   const cards = [
@@ -124,12 +154,13 @@ function instanceHtml(instance, serverTime) {
         <span>Watcher 수집</span><b>${esc(time(snapshot.collectedAt))}</b>
       </div>
       <div class="tasks">
-        <div class="row spread">
-          <strong>진행/이상 작업</strong>
-          <span class="muted">${activeTasks.length}건</span>
+        <div class="row spread taskSectionHead">
+          <strong>채팅/MCP 세션별 작업 상태</strong>
+          <span class="muted">${activeSessions.length}세션 · ${activeTaskCount}작업</span>
         </div>
-        ${activeTasks.length
-          ? activeTasks.map((task) => taskHtml(task, serverTime)).join("")
+        <div class="sessionNote">세션 식별자는 MCP 호출 기준이며 ChatGPT 화면의 채팅방과 항상 1:1로 보장되지는 않습니다.</div>
+        ${activeSessions.length
+          ? activeSessions.map((session) => sessionHtml(session, serverTime)).join("")
           : '<div class="empty">진행 중이거나 정지된 작업이 없습니다.</div>'}
       </div>
     </article>`;
