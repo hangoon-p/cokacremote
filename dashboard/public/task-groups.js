@@ -6,29 +6,6 @@ const STATUS_PRIORITY = {
   COMPLETED: 1,
 };
 
-const TOOL_TITLES = {
-  exec_command: "명령 실행",
-  run_script: "스크립트 실행",
-  read_process: "실행 상태 확인",
-  write_stdin: "프로세스 입력",
-  terminate_process: "프로세스 종료",
-  list_processes: "프로세스 확인",
-  read_file: "파일 확인",
-  write_file: "파일 작성",
-  replace_in_file: "파일 수정",
-  apply_patch: "코드 패치",
-  list_directory: "폴더 확인",
-  stat_path: "파일 정보 확인",
-  make_directory: "폴더 생성",
-  copy_path: "파일 복사",
-  move_path: "파일 이동",
-  remove_path: "파일 삭제",
-  chmod_path: "권한 변경",
-  upload_file: "파일 업로드",
-  download_file: "파일 다운로드",
-  hash_file: "파일 검증",
-};
-
 function taskActivityTime(task) {
   const value =
     task?.lastActivityAt ||
@@ -73,9 +50,8 @@ function compactText(value, maxLength = 42) {
 }
 
 function inferredTitle(tasks) {
-  const tool = tasks.find((task) => task?.lastTool)?.lastTool;
-  if (!tool) return "제목 없는 MCP 작업";
-  return `${TOOL_TITLES[tool] || tool} 작업`;
+  const project = tasks.find((task) => task?.projectName)?.projectName;
+  return project ? `${compactText(project, 38)} 관련 작업` : "제목 미지정 세션";
 }
 
 export function taskDisplayTitle(task) {
@@ -83,8 +59,8 @@ export function taskDisplayTitle(task) {
   if (explicitTitle) return explicitTitle;
   const requestTitle = compactText(task?.userRequest, 42);
   if (requestTitle) return requestTitle;
-  const tool = task?.lastTool;
-  return tool ? `${TOOL_TITLES[tool] || tool} 작업` : "관찰 작업";
+  if (task?.projectName) return `${compactText(task.projectName, 38)} 관련 작업`;
+  return "작업 내용 미지정";
 }
 
 export const INACTIVE_DISPLAY_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -167,7 +143,9 @@ export function groupTasksBySession(tasks, { includeCompleted = false } = {}) {
           ? "title"
           : requestTitle
             ? "request"
-            : "inferred",
+            : sortedTasks.some((task) => task?.projectName)
+              ? "project"
+              : "unknown",
         status: sessionStatus(sortedTasks),
         lastActivityAt: sortedTasks[0]?.lastActivityAt,
         inactiveAt: sortedTasks

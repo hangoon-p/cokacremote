@@ -1,4 +1,4 @@
-const CACHE = "cokacremote-monitor-v6";
+const CACHE = "cokacremote-monitor-v7";
 const STATIC = [
   "/",
   "/styles.css",

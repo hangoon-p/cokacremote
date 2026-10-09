@@ -18,11 +18,14 @@ const settingsDialog = $("settingsDialog");
 const hiddenSessionsEl = $("hiddenSessions");
 
 const HIDDEN_SESSIONS_KEY = "cokacremote-hidden-sessions-v1";
+const SESSION_TITLES_KEY = "cokacremote-session-titles-v1";
 
 let token = localStorage.getItem("cokacremote-dashboard-token") || "";
 let refreshTimer;
 let hiddenSessions = loadHiddenSessions();
+let sessionTitles = loadSessionTitles();
 let renderedSessions = new Map();
+let editingSessionKey = null;
 
 function esc(value) {
   return String(value ?? "")
@@ -47,6 +50,23 @@ function saveHiddenSessions() {
   localStorage.setItem(HIDDEN_SESSIONS_KEY, JSON.stringify(hiddenSessions));
 }
 
+function loadSessionTitles() {
+  try {
+    const value = JSON.parse(localStorage.getItem(SESSION_TITLES_KEY) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSessionTitles() {
+  localStorage.setItem(SESSION_TITLES_KEY, JSON.stringify(sessionTitles));
+}
+
+function displaySessionTitle(instanceId, session) {
+  return sessionTitles[hiddenSessionKey(instanceId, session.sessionKey)] || session.title;
+}
+
 function hiddenSessionKey(instanceId, sessionKey) {
   return `${instanceId}::${sessionKey}`;
 }
@@ -56,7 +76,7 @@ function hideSession(instanceId, session) {
   hiddenSessions[key] = {
     instanceId,
     sessionKey: session.sessionKey,
-    title: session.title,
+    title: displaySessionTitle(instanceId, session),
     sessionLabel: session.sessionLabel,
     status: session.status,
     lastActivityAt: session.lastActivityAt || "",
@@ -196,13 +216,24 @@ function sessionHtml(instanceId, session, now) {
     <section class="chatSession">
       <div class="chatSessionHead">
         <div class="chatSessionIdentity">
-          <div class="chatSessionTitle">${esc(session.title)}</div>
+          <div class="chatSessionTitle">${esc(displaySessionTitle(instanceId, session))}</div>
           <div class="chatSessionMeta">
             ChatGPT / MCP 세션 ${esc(session.sessionLabel)} · 마지막 활동 ${esc(inactive)}
           </div>
         </div>
         <div class="chatSessionActions">
           ${badge(session.status, statusKind(session.status))}
+          <button
+            class="smallIconButton ghost"
+            type="button"
+            data-edit-session="${esc(hiddenSessionKey(instanceId, session.sessionKey))}"
+            aria-label="세션 제목 수정"
+            title="세션 제목 수정"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m15 5 4 4M4 20l4.8-1L20 7.8a2 2 0 0 0-2.8-2.8L6 16.2 4 20Z"/>
+            </svg>
+          </button>
           <button
             class="smallIconButton ghost sessionHideButton"
             type="button"
@@ -408,6 +439,19 @@ settingsDialog.addEventListener("click", (event) => {
 });
 
 instancesEl.addEventListener("click", (event) => {
+  const editButton = event.target.closest("[data-edit-session]");
+  if (editButton) {
+    const key = editButton.dataset.editSession;
+    const current = renderedSessions.get(key);
+    if (current) {
+      editingSessionKey = key;
+      $("sessionTitleInput").value = sessionTitles[key] || "";
+      $("sessionTitleInput").placeholder = current.session.title;
+      $("titleDialog").showModal();
+      $("sessionTitleInput").focus();
+    }
+    return;
+  }
   const button = event.target.closest("[data-hide-session]");
   if (!button) return;
 
@@ -418,6 +462,30 @@ instancesEl.addEventListener("click", (event) => {
   renderHiddenSessions();
   refresh();
 });
+
+$("sessionTitleForm").addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!editingSessionKey) return;
+  const value = $("sessionTitleInput").value.trim().slice(0, 80);
+  if (value) sessionTitles[editingSessionKey] = value;
+  else delete sessionTitles[editingSessionKey];
+  saveSessionTitles();
+  $("titleDialog").close();
+  editingSessionKey = null;
+  refresh();
+});
+
+$("resetSessionTitle").addEventListener("click", () => {
+  if (!editingSessionKey) return;
+  delete sessionTitles[editingSessionKey];
+  saveSessionTitles();
+  $("titleDialog").close();
+  editingSessionKey = null;
+  refresh();
+});
+
+$("closeTitleDialog").addEventListener("click", () => $("titleDialog").close());
+$("titleDialog").addEventListener("close", () => { editingSessionKey = null; });
 
 hiddenSessionsEl.addEventListener("click", (event) => {
   const button = event.target.closest("[data-restore-session]");

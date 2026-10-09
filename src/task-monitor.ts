@@ -16,6 +16,7 @@ export interface TaskSnapshot {
   explicitStart: boolean;
   userRequest: string | undefined;
   title: string | undefined;
+  projectName: string | undefined;
   summary: string | undefined;
   startedAt: string;
   lastActivityAt: string;
@@ -42,6 +43,7 @@ interface TaskRecord {
   explicitStart: boolean;
   userRequest: string | undefined;
   title: string | undefined;
+  projectName: string | undefined;
   summary: string | undefined;
   startedAt: number;
   lastActivityAt: number;
@@ -155,7 +157,7 @@ export class TaskMonitor {
     return this.#snapshot(task);
   }
 
-  toolStarted(chatSession: string, toolName: string): TaskSnapshot {
+  toolStarted(chatSession: string, toolName: string, projectName?: string): TaskSnapshot {
     const now = Date.now();
     let task = this.#currentBySession.get(chatSession);
     if (task?.status === "INACTIVE" && !task.explicitStart) {
@@ -172,6 +174,7 @@ export class TaskMonitor {
     task.activeCalls += 1;
     task.lastActivityAt = now;
     task.lastTool = toolName;
+    if (projectName) task.projectName = projectName;
     return this.#snapshot(task);
   }
 
@@ -279,6 +282,7 @@ export class TaskMonitor {
       explicitStart: input.explicitStart,
       userRequest: input.userRequest,
       title: input.title,
+      projectName: undefined,
       summary: undefined,
       startedAt: now,
       lastActivityAt: now,
@@ -348,6 +352,7 @@ export class TaskMonitor {
       explicitStart: task.explicitStart,
       userRequest: task.userRequest,
       title: task.title,
+      projectName: task.projectName,
       summary: task.summary,
       startedAt: new Date(task.startedAt).toISOString(),
       lastActivityAt: new Date(task.lastActivityAt).toISOString(),

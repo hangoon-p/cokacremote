@@ -285,6 +285,19 @@ button:focus-visible {
 
 .chatSessionTasks { padding: 0 12px; }
 
+.titleForm { padding: 18px; max-width: none; }
+.titleForm p { color: #68758a; font-size: 12px; line-height: 1.45; }
+.titleForm input { margin: 8px 0 16px; }
+.titleFormActions { justify-content: flex-end; }
+.titleFormActions button { padding: 8px 11px; font-size: 12px; }
+.titleFormActions button:first-child { margin-right: auto; }
+@media (max-width: 420px) {
+  .chatSessionActions { gap: 4px; }
+  .chatSessionHead { gap: 6px; padding: 10px 8px; }
+  .chatSessionActions .badge { padding: 4px 6px; font-size: 10px; }
+  .chatSessionActions .smallIconButton { width: 26px; height: 26px; min-width: 26px; }
+}
+
 .task {
   padding: 9px 0;
   border-bottom: 1px solid #e6ebf2;

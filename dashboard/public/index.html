@@ -86,6 +86,19 @@
     </section>
   </dialog>
 
+  <dialog id="titleDialog" aria-labelledby="titleDialogHeading">
+    <form id="sessionTitleForm" class="titleForm">
+      <h2 id="titleDialogHeading">세션 제목 지정</h2>
+      <p>이 기기에서 표시할 제목입니다. 실제 ChatGPT 채팅 제목은 변경되지 않습니다.</p>
+      <input id="sessionTitleInput" type="text" maxlength="80" autocomplete="off" aria-label="세션 제목">
+      <div class="actions titleFormActions">
+        <button type="button" class="ghost" id="resetSessionTitle">자동 제목</button>
+        <button type="button" class="ghost" id="closeTitleDialog">취소</button>
+        <button type="submit">저장</button>
+      </div>
+    </form>
+  </dialog>
+
   <script type="module" src="/app.js"></script>
 </body>
 </html>

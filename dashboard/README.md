@@ -14,6 +14,15 @@ D1 is intentionally used as a minimal persistent state store rather than as an e
 
 The office PC never needs an inbound Internet port.
 
+## Session names and lifecycle constraints
+
+- An explicit `task_begin.title` or `userRequest` gives the most accurate description. Without it, the local MCP watcher cannot see ChatGPT's original user prompt or the actual ChatGPT conversation title.
+- Implicit MCP calls use only a sanitized project folder name inferred from paths under `/dev/<project>`, if available; otherwise the session shows as unnamed instead of misleading tool-based labels.
+- Tap the pencil icon next to a session to name it precisely (for example, `1041508 차량번호 조회 검토`). This is stored only in that browser's localStorage; the reset button returns to the automatic name.
+- `INACTIVE` indicates unbracketed activity has stopped for the configured idle interval. `STALLED` requires a prior explicit `task_begin` and no `task_complete`. Automatically turning every implicit session into `STALLED` would falsely alert on normal completed work.
+- Raw MCP `tools/list` already exposes `task_begin` and `task_complete`. If ChatGPT's connected MCP tool catalogue omits them, refresh/reconnect the connection in ChatGPT before testing explicit lifecycle behavior. A new chat by itself does not guarantee that the tool catalogue refreshes.
+
+
 ## 1. Install
 
 ```bash

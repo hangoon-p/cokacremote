@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +22,7 @@ interface MonitorTask {
   explicitStart: boolean;
   userRequest?: string;
   title?: string;
+  projectName?: string;
   summary?: string;
   lastTool?: string;
   activeCalls: number;
@@ -96,6 +97,35 @@ describe("task monitor HTTP integration", () => {
     expect(response.status).toBe(200);
     return (await response.json()) as MonitorState;
   };
+
+  it("exposes lifecycle tools to raw MCP clients", async () => {
+    const response = await post({ jsonrpc: "2.0", id: 77, method: "tools/list", params: {} });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { result?: { tools?: Array<{ name: string }> } };
+    expect(body.result?.tools?.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["task_begin", "task_complete"]),
+    );
+  });
+
+  it("extracts project context without retaining raw command arguments", async () => {
+    const projectPath = path.join(temporaryDirectory, "dev", "monitor-context-demo");
+    await mkdir(projectPath, { recursive: true });
+    const response = await post({
+      jsonrpc: "2.0",
+      id: 78,
+      method: "tools/call",
+      params: { name: "list_directory", arguments: { path: projectPath } },
+    }, "chat-project-context-demo");
+    expect(response.status).toBe(200);
+    const state = await readMonitor();
+    expect(state.tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        chatSession: "chat-project-context-demo",
+        projectName: "monitor-context-demo",
+        status: "OBSERVED",
+      }),
+    ]));
+  });
 
   it("requires authentication for the monitor endpoint", async () => {
     const response = await fetch(monitorEndpoint);

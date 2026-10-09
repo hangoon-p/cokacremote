@@ -128,7 +128,7 @@ test("long session ids are shortened for display only", () => {
 });
 
 
-test("implicit activity gets a readable tool-based title instead of a UUID", () => {
+test("implicit activity without project or request never pretends a tool name is the task title", () => {
   const task = {
     taskId: "28d57dd6-8ee6-46bf-b0d0-2e9023d40572",
     chatSession: "session-a",
@@ -137,10 +137,10 @@ test("implicit activity gets a readable tool-based title instead of a UUID", () 
     lastActivityAt: "2026-10-07T09:00:00.000Z",
   };
 
-  assert.equal(taskDisplayTitle(task), "파일 수정 작업");
+  assert.equal(taskDisplayTitle(task), "작업 내용 미지정");
   const [group] = groupTasksBySession([task]);
-  assert.equal(group.title, "파일 수정 작업");
-  assert.equal(group.titleSource, "inferred");
+  assert.equal(group.title, "제목 미지정 세션");
+  assert.equal(group.titleSource, "unknown");
 });
 
 test("long user requests are compacted for the session heading", () => {
@@ -181,10 +181,27 @@ test("INACTIVE implicit sessions remain visible and rank above OBSERVED", () => 
 
   assert.equal(groups.length, 2);
   assert.equal(groups[0].status, "INACTIVE");
-  assert.equal(groups[0].title, "명령 실행 작업");
+  assert.equal(groups[0].title, "제목 미지정 세션");
   assert.equal(groups[1].status, "OBSERVED");
 });
 
+
+test("implicit activity uses repository context instead of tool names", () => {
+  const [group] = groupTasksBySession([
+    {
+      taskId: "project-record",
+      chatSession: "session-project",
+      status: "OBSERVED",
+      projectName: "ksystem-bridge",
+      lastTool: "exec_command",
+      lastActivityAt: "2026-10-07T09:00:00.000Z",
+    },
+  ]);
+
+  assert.equal(group.title, "ksystem-bridge 관련 작업");
+  assert.equal(group.titleSource, "project");
+  assert.equal(taskDisplayTitle(group.tasks[0]), "ksystem-bridge 관련 작업");
+});
 
 test("INACTIVE session expires from the current view after 24 hours", () => {
   const [session] = groupTasksBySession([
