@@ -61,13 +61,14 @@ test("STALLED wins the aggregate session status", () => {
   assert.equal(group.status, "STALLED");
 });
 
-test("completed tasks are hidden from current session view by default", () => {
-  const groups = groupTasksBySession([
+test("recent completed tasks stay visible beside newer work in the same session", () => {
+  const tasks = [
     {
       taskId: "done",
       chatSession: "session-a",
       status: "COMPLETED",
       title: "Old completed work",
+      completedAt: "2026-10-07T08:01:00.000Z",
       lastActivityAt: "2026-10-07T08:00:00.000Z",
     },
     {
@@ -77,12 +78,15 @@ test("completed tasks are hidden from current session view by default", () => {
       title: "Current work",
       lastActivityAt: "2026-10-07T09:00:00.000Z",
     },
-  ]);
+  ];
+  const now = Date.parse("2026-10-07T09:15:00.000Z");
+  const groups = groupTasksBySession(tasks, { now });
 
   assert.equal(groups.length, 1);
-  assert.equal(groups[0].tasks.length, 1);
+  assert.equal(groups[0].tasks.length, 2);
   assert.equal(groups[0].tasks[0].taskId, "current");
   assert.equal(groups[0].title, "Current work");
+  assert.equal(groupTasksBySession(tasks, { now, includeCompleted: false })[0].tasks.length, 1);
 });
 
 test("representative title prefers a named task over an unnamed newer task", () => {
@@ -264,4 +268,75 @@ test("manual hide is cleared when new MCP activity is detected", () => {
     ),
     false,
   );
+});
+
+
+test("COMPLETED sessions remain visible until exactly 24 hours after completion", () => {
+  const completedAt = "2026-10-07T10:00:00.000Z";
+  const tasks = [{
+    taskId: "done",
+    chatSession: "session-done",
+    status: "COMPLETED",
+    completedAt,
+    lastActivityAt: "2026-10-07T09:55:00.000Z",
+    title: "Finished work",
+  }];
+  const before = Date.parse("2026-10-08T09:59:59.999Z");
+  const deadline = Date.parse("2026-10-08T10:00:00.000Z");
+  const [session] = groupTasksBySession(tasks, { now: before });
+
+  assert.equal(session.status, "COMPLETED");
+  assert.equal(session.tasks.length, 1);
+  assert.equal(session.completedAt, completedAt);
+  assert.equal(sessionIsExpired(session, before), false);
+  assert.equal(sessionIsExpired(session, deadline), true);
+  assert.equal(groupTasksBySession(tasks, { now: deadline }).length, 0);
+});
+
+test("old COMPLETED tasks expire even when the same chat session becomes active again", () => {
+  const tasks = [{
+    taskId: "old",
+    chatSession: "session-again",
+    status: "COMPLETED",
+    completedAt: "2026-10-07T09:00:00.000Z",
+    lastActivityAt: "2026-10-07T09:00:00.000Z",
+  }, {
+    taskId: "new",
+    chatSession: "session-again",
+    status: "WORKING",
+    lastActivityAt: "2026-10-08T09:01:00.000Z",
+  }];
+  const [session] = groupTasksBySession(tasks, {
+    now: Date.parse("2026-10-08T09:01:00.000Z"),
+  });
+  assert.equal(session.status, "WORKING");
+  assert.deepEqual(session.tasks.map((task) => task.taskId), ["new"]);
+  assert.equal(sessionIsExpired(session, Date.parse("2026-10-08T09:01:00.000Z")), false);
+});
+
+test("COMPLETED manual hide persists until newer activity appears", () => {
+  const hidden = {
+    status: "COMPLETED",
+    lastActivityAt: "2026-10-07T10:00:00.000Z",
+  };
+  assert.equal(hiddenSessionStillApplies(hidden, {
+    status: "COMPLETED", lastActivityAt: "2026-10-07T10:00:00.000Z",
+  }), true);
+  assert.equal(hiddenSessionStillApplies(hidden, {
+    status: "WORKING", lastActivityAt: "2026-10-07T11:00:00.000Z",
+  }), false);
+});
+
+test("legacy COMPLETED tasks without completedAt fall back to lastActivityAt", () => {
+  const tasks = [{
+    status: "COMPLETED",
+    chatSession: "old-compatible",
+    lastActivityAt: "2026-10-07T09:00:00.000Z",
+  }];
+  assert.equal(groupTasksBySession(tasks, {
+    now: Date.parse("2026-10-08T08:59:59.000Z"),
+  }).length, 1);
+  assert.equal(groupTasksBySession(tasks, {
+    now: Date.parse("2026-10-08T09:00:00.000Z"),
+  }).length, 0);
 });

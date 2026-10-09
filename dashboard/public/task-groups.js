@@ -65,13 +65,22 @@ export function taskDisplayTitle(task) {
 
 export const INACTIVE_DISPLAY_RETENTION_MS = 24 * 60 * 60 * 1000;
 
+function completedTaskIsExpired(task, now, retentionMs) {
+  const timestamp = Date.parse(String(task?.completedAt || task?.lastActivityAt || ""));
+  return Number.isFinite(timestamp) && now - timestamp >= retentionMs;
+}
+
 export function sessionIsExpired(
   session,
   now = Date.now(),
   retentionMs = INACTIVE_DISPLAY_RETENTION_MS,
 ) {
-  if (!session || session.status !== "INACTIVE") return false;
-  const reference = session.inactiveAt || session.lastActivityAt;
+  if (!session || (session.status !== "INACTIVE" && session.status !== "COMPLETED")) {
+    return false;
+  }
+  const reference = session.status === "COMPLETED"
+    ? session.completedAt || session.lastActivityAt
+    : session.inactiveAt || session.lastActivityAt;
   const timestamp = Date.parse(String(reference || ""));
   if (!Number.isFinite(timestamp)) return false;
   return now - timestamp >= retentionMs;
@@ -102,13 +111,19 @@ export function shortSessionId(value) {
   return `${text.slice(0, 8)}…${text.slice(-5)}`;
 }
 
-export function groupTasksBySession(tasks, { includeCompleted = false } = {}) {
+export function groupTasksBySession(
+  tasks,
+  { includeCompleted = true, now = Date.now(), retentionMs = INACTIVE_DISPLAY_RETENTION_MS } = {},
+) {
   const source = Array.isArray(tasks) ? tasks : [];
   const groups = new Map();
 
   for (const task of source) {
     if (!task || typeof task !== "object") continue;
     if (!includeCompleted && task.status === "COMPLETED") continue;
+    if (task.status === "COMPLETED" && completedTaskIsExpired(task, now, retentionMs)) {
+      continue;
+    }
 
     const sessionKey =
       typeof task.chatSession === "string" && task.chatSession.trim()
@@ -151,6 +166,12 @@ export function groupTasksBySession(tasks, { includeCompleted = false } = {}) {
         inactiveAt: sortedTasks
           .filter((task) => task?.status === "INACTIVE" && task?.inactiveAt)
           .map((task) => task.inactiveAt)
+          .sort()
+          .at(-1),
+        completedAt: sortedTasks
+          .filter((task) => task?.status === "COMPLETED")
+          .map((task) => task.completedAt || task.lastActivityAt)
+          .filter(Boolean)
           .sort()
           .at(-1),
         tasks: sortedTasks,

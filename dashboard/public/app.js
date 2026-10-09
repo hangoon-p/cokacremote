@@ -262,7 +262,7 @@ function instanceHtml(instance, serverTime) {
   const tunnel = snapshot.tunnel || {};
   const runtime = snapshot.runtime || {};
   const tasks = Array.isArray(monitor.state?.tasks) ? monitor.state.tasks : [];
-  const allSessions = groupTasksBySession(tasks);
+  const allSessions = groupTasksBySession(tasks, { now: serverTime });
 
   const activeSessions = allSessions.filter((session) => {
     if (sessionIsExpired(session, serverTime)) {
@@ -316,7 +316,7 @@ function instanceHtml(instance, serverTime) {
           <span class="muted">${activeSessions.length}세션 · ${activeTaskCount}작업</span>
         </div>
         <div class="sessionNote">
-          INACTIVE 세션은 24시간 후 자동으로 숨겨집니다. 수동으로 숨긴 세션도 새 MCP 활동이 감지되면 자동으로 다시 표시됩니다.
+          INACTIVE 및 COMPLETED 작업은 각각 비활성화·완료 시점부터 24시간 후 자동으로 숨겨집니다. 수동으로 숨긴 세션도 새 MCP 활동이 감지되면 자동으로 다시 표시됩니다.
         </div>
         ${
           activeSessions.length
