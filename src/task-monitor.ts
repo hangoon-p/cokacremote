@@ -14,6 +14,7 @@ export interface TaskSnapshot {
   chatSession: string;
   status: TaskStatus;
   explicitStart: boolean;
+  serverStarted: boolean;
   userRequest: string | undefined;
   title: string | undefined;
   projectName: string | undefined;
@@ -41,6 +42,7 @@ interface TaskRecord {
   chatSession: string;
   status: TaskStatus;
   explicitStart: boolean;
+  serverStarted: boolean;
   userRequest: string | undefined;
   title: string | undefined;
   projectName: string | undefined;
@@ -55,6 +57,7 @@ interface TaskRecord {
   lastTool: string | undefined;
   activeCalls: number;
   processSessionIds: Set<string>;
+  serverBeginNoticeSent: boolean;
 }
 
 export interface TaskMonitorOptions {
@@ -129,6 +132,17 @@ export class TaskMonitor {
       if (title?.trim()) {
         existing.title = title.trim();
       }
+      return this.#snapshot(existing);
+    }
+
+    if (existing?.status === "WORKING" && existing.serverStarted && !existing.explicitStart) {
+      // A delayed model-issued begin enriches the same server-started task;
+      // never strand its active call or create a duplicate record.
+      existing.explicitStart = true;
+      existing.userRequest = userRequest;
+      existing.title = title?.trim() || existing.title;
+      existing.lastActivityAt = now;
+      this.#emitState(existing, "task_begin_late");
       return this.#snapshot(existing);
     }
 
@@ -209,8 +223,8 @@ export class TaskMonitor {
     if (!task) {
       throw new Error("No active monitored task exists for this ChatGPT session.");
     }
-    if (task.status === "OBSERVED" || !task.explicitStart) {
-      throw new Error("task_complete requires an explicit task_begin for the monitored work.");
+    if (task.status === "OBSERVED" || (!task.explicitStart && !task.serverStarted)) {
+      throw new Error("task_complete requires task_begin or server-started monitored work.");
     }
     if (task.status === "COMPLETED") {
       return this.#snapshot(task);
@@ -266,6 +280,40 @@ export class TaskMonitor {
     return task ? this.#snapshot(task) : undefined;
   }
 
+  // Fallback only when this operational call has created/resumed an implicit
+  // task. It is a monitored WORKING task, but NOT a user-provided task_begin:
+  // we cannot invent a user request or title. The origin remains observable.
+  beginOnMissingMarker(chatSession: string, taskId: string): TaskSnapshot | undefined {
+    const task = this.#currentBySession.get(chatSession);
+    if (!task || task.taskId !== taskId) return undefined;
+    if (task.status === "OBSERVED" && !task.explicitStart) {
+      task.serverStarted = true;
+      task.status = "WORKING";
+      task.inactiveAt = undefined;
+      task.inactiveReason = undefined;
+      this.#emitState(task, "task_begin_server_fallback");
+    }
+    return this.#snapshot(task);
+  }
+
+  // Emit at most one completion reminder per server-started task. Even when
+  // parallel tool calls finish out of order, do not remind a newer task.
+  takeServerBeginNotice(chatSession: string, taskId: string): boolean {
+    const task = this.#currentBySession.get(chatSession);
+    if (
+      !task ||
+      task.taskId !== taskId ||
+      task.status !== "WORKING" ||
+      !task.serverStarted ||
+      task.explicitStart ||
+      task.serverBeginNoticeSent
+    ) {
+      return false;
+    }
+    task.serverBeginNoticeSent = true;
+    return true;
+  }
+
   #createTask(
     chatSession: string,
     now: number,
@@ -280,6 +328,7 @@ export class TaskMonitor {
       chatSession,
       status: input.explicitStart ? "WORKING" : "OBSERVED",
       explicitStart: input.explicitStart,
+      serverStarted: false,
       userRequest: input.userRequest,
       title: input.title,
       projectName: undefined,
@@ -294,6 +343,7 @@ export class TaskMonitor {
       lastTool: undefined,
       activeCalls: 0,
       processSessionIds: new Set(),
+      serverBeginNoticeSent: false,
     };
     this.#currentBySession.set(chatSession, task);
     this.#tasks.push(task);
@@ -334,7 +384,7 @@ export class TaskMonitor {
   }
 
   #markStalled(task: TaskRecord, now: number, reason: string): void {
-    if (task.status !== "WORKING" || !task.explicitStart) {
+    if (task.status !== "WORKING" || (!task.explicitStart && !task.serverStarted)) {
       return;
     }
     task.status = "STALLED";
@@ -350,6 +400,7 @@ export class TaskMonitor {
       chatSession: task.chatSession,
       status: task.status,
       explicitStart: task.explicitStart,
+      serverStarted: task.serverStarted,
       userRequest: task.userRequest,
       title: task.title,
       projectName: task.projectName,
@@ -377,6 +428,7 @@ export class TaskMonitor {
       chatSession: snapshot.chatSession,
       status: snapshot.status,
       explicitStart: snapshot.explicitStart,
+      serverStarted: snapshot.serverStarted,
       title: snapshot.title,
       lastTool: snapshot.lastTool,
       startedAt: snapshot.startedAt,

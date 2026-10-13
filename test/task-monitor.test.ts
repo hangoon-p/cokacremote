@@ -101,6 +101,53 @@ describe("TaskMonitor", () => {
     expect(monitor.getState().tasks).toHaveLength(1);
   });
 
+
+  it("auto-starts a missing task_begin once, supports task_complete and never duplicates late begin", () => {
+    manager = createManager();
+    const monitor = new TaskMonitor(manager, { stallMs: 1000, emit: () => {} });
+    const implicit = monitor.toolStarted("chat-reminder", "stat_path");
+    expect(monitor.beginOnMissingMarker("chat-reminder", "wrong-id")).toBeUndefined();
+    expect(monitor.takeServerBeginNotice("another-chat", implicit.taskId)).toBe(false);
+    const auto = monitor.beginOnMissingMarker("chat-reminder", implicit.taskId);
+    expect(auto).toMatchObject({
+      taskId: implicit.taskId,
+      status: "WORKING",
+      explicitStart: false,
+      serverStarted: true,
+      title: undefined,
+      userRequest: undefined,
+    });
+    expect(monitor.takeServerBeginNotice("chat-reminder", implicit.taskId)).toBe(true);
+    expect(monitor.takeServerBeginNotice("chat-reminder", implicit.taskId)).toBe(false);
+    monitor.toolFinished("chat-reminder", "stat_path", "completed");
+    const late = monitor.begin("chat-reminder", "Continue project work", "Project work");
+    expect(late).toMatchObject({ taskId: implicit.taskId, status: "WORKING", explicitStart: true });
+    expect(monitor.takeServerBeginNotice("chat-reminder", implicit.taskId)).toBe(false);
+    monitor.complete("chat-reminder");
+    const newImplicit = monitor.toolStarted("chat-reminder", "stat_path");
+    expect(newImplicit.taskId).not.toBe(implicit.taskId);
+    monitor.beginOnMissingMarker("chat-reminder", newImplicit.taskId);
+    expect(monitor.takeServerBeginNotice("chat-reminder", newImplicit.taskId)).toBe(true);
+    monitor.toolFinished("chat-reminder", "stat_path", "completed");
+    expect(monitor.complete("chat-reminder").status).toBe("COMPLETED");
+  });
+
+  it("server fallback works like begin for stall detection without in-flight false alarms", () => {
+    manager = createManager();
+    const monitor = new TaskMonitor(manager, { stallMs: 1000, emit: () => {} });
+    const implicit = monitor.toolStarted("chat-auto-stall", "stat_path");
+    monitor.beginOnMissingMarker("chat-auto-stall", implicit.taskId);
+    const begun = monitor.current("chat-auto-stall")!;
+    monitor.refresh(Date.parse(begun.lastActivityAt) + 1000);
+    expect(monitor.current("chat-auto-stall")?.status).toBe("WORKING");
+    monitor.toolFinished("chat-auto-stall", "stat_path", "completed");
+    const lastActivity = Date.parse(monitor.current("chat-auto-stall")!.lastActivityAt);
+    monitor.refresh(lastActivity + 1000);
+    expect(monitor.current("chat-auto-stall")).toMatchObject({
+      status: "STALLED", explicitStart: false, serverStarted: true,
+    });
+  });
+
   it("keeps implicit activity visible as INACTIVE instead of completing it", () => {
     manager = createManager();
     const events: Record<string, unknown>[] = [];
@@ -161,7 +208,7 @@ describe("TaskMonitor", () => {
     monitor.toolStarted("chat-a", "read_file");
     monitor.toolFinished("chat-a", "read_file", "completed");
 
-    expect(() => monitor.complete("chat-a")).toThrow("explicit task_begin");
+    expect(() => monitor.complete("chat-a")).toThrow("task_begin or server-started");
   });
 
   it("keeps concurrent ChatGPT conversations isolated", () => {

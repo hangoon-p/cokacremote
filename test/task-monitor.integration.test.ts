@@ -12,6 +12,8 @@ import { createServices } from "../src/mcp-server.js";
 interface JsonRpcResponse {
   result?: {
     structuredContent?: Record<string, unknown>;
+    content?: Array<{ type: string; text?: string }>;
+    isError?: boolean;
   };
 }
 
@@ -20,6 +22,7 @@ interface MonitorTask {
   chatSession: string;
   status: "OBSERVED" | "INACTIVE" | "WORKING" | "COMPLETED" | "STALLED";
   explicitStart: boolean;
+  serverStarted?: boolean;
   userRequest?: string;
   title?: string;
   projectName?: string;
@@ -126,14 +129,139 @@ describe("task monitor HTTP integration", () => {
       expect.objectContaining({
         chatSession: "chat-project-context-demo",
         projectName: "monitor-context-demo",
-        status: "OBSERVED",
+        status: "WORKING",
+        serverStarted: true,
+        explicitStart: false,
       }),
     ]));
+  });
+
+
+  it("adds one non-blocking reminder to implicit tool results and preserves data", async () => {
+    const chatSession = "chat-missing-begin-reminder";
+    const call = async (id: number, name: string, arguments_: Record<string, unknown>) => {
+      const response = await post({
+        jsonrpc: "2.0", id, method: "tools/call",
+        params: { name, arguments: arguments_ },
+      }, chatSession);
+      expect(response.status).toBe(200);
+      return (await response.json()) as JsonRpcResponse;
+    };
+    const first = await call(300, "stat_path", { path: temporaryDirectory });
+    expect(first.result?.isError).not.toBe(true);
+    expect(first.result?.structuredContent).toMatchObject({ type: "directory" });
+    expect(first.result?.content).toHaveLength(2);
+    expect(JSON.parse(first.result?.content?.[0]?.text || "{}")).toEqual(first.result?.structuredContent);
+    expect(first.result?.content?.[1]?.text).toContain("task_begin was not received");
+    expect(first.result?.content?.[1]?.text).toContain("server has already performed");
+    expect(first.result?.content?.[1]?.text).toContain("task_complete");
+
+    const subsequent = await call(301, "stat_path", { path: temporaryDirectory });
+    expect(subsequent.result?.content).toHaveLength(1);
+    expect(subsequent.result?.structuredContent).toEqual(first.result?.structuredContent);
+
+    const begun = await call(302, "task_begin", {
+      userRequest: "Check the project directory", title: "Project directory review",
+    });
+    expect(begun.result?.structuredContent).toMatchObject({ status: "WORKING" });
+    expect(begun.result?.content).toHaveLength(1);
+
+    const working = await call(303, "stat_path", { path: temporaryDirectory });
+    expect(working.result?.content).toHaveLength(1);
+
+    const completed = await call(304, "task_complete", { summary: "Directory verified" });
+    expect(completed.result?.structuredContent).toMatchObject({ status: "COMPLETED" });
+    expect(completed.result?.content).toHaveLength(1);
+
+    // An unmarked new operation after a confirmed completion is a new implicit task.
+    const newImplicit = await call(305, "stat_path", { path: temporaryDirectory });
+    expect(newImplicit.result?.content).toHaveLength(2);
+    expect(newImplicit.result?.content?.[1]?.text).toContain("task_complete");
+  });
+
+  it("attaches the reminder even when an implicit tool fails without rewriting the error", async () => {
+    const response = await post({
+      jsonrpc: "2.0", id: 310, method: "tools/call",
+      params: { name: "stat_path", arguments: { path: path.join(temporaryDirectory, "missing-file") } },
+    }, "chat-implicit-tool-error");
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as JsonRpcResponse;
+    expect(payload.result?.isError).toBe(true);
+    expect(payload.result?.structuredContent?.error).toBeTruthy();
+    expect(JSON.parse(payload.result?.content?.[0]?.text || "{}")).toEqual(payload.result?.structuredContent);
+    expect(payload.result?.content?.[1]?.text).toContain("task_begin");
+  });
+
+  it("does not add a reminder when task_begin was called first", async () => {
+    const chatSession = "chat-explicit-no-reminder";
+    const beginResponse = await post({
+      jsonrpc: "2.0", id: 320, method: "tools/call",
+      params: {
+        name: "task_begin",
+        arguments: { userRequest: "Inspect a file", title: "Inspect file" },
+      },
+    }, chatSession);
+    expect(beginResponse.status).toBe(200);
+    const toolResponse = await post({
+      jsonrpc: "2.0", id: 321, method: "tools/call",
+      params: { name: "stat_path", arguments: { path: temporaryDirectory } },
+    }, chatSession);
+    expect(toolResponse.status).toBe(200);
+    const payload = (await toolResponse.json()) as JsonRpcResponse;
+    expect(payload.result?.content).toHaveLength(1);
+    expect(payload.result?.structuredContent).toMatchObject({ type: "directory" });
+    await post({ jsonrpc: "2.0", id: 322, method: "tools/call",
+      params: { name: "task_complete", arguments: {} } }, chatSession);
   });
 
   it("requires authentication for the monitor endpoint", async () => {
     const response = await fetch(monitorEndpoint);
     expect(response.status).toBe(401);
+  });
+
+
+  it("server-started work can complete without a later task_begin", async () => {
+    const chatSession = "chat-fallback-completes-directly";
+    const first = await post({
+      jsonrpc: "2.0", id: 330, method: "tools/call",
+      params: { name: "stat_path", arguments: { path: temporaryDirectory } },
+    }, chatSession);
+    expect(first.status).toBe(200);
+    const firstResult = (await first.json()) as JsonRpcResponse;
+    expect(firstResult.result?.content).toHaveLength(2);
+
+    const state = await readMonitor();
+    expect(state.tasks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        chatSession, status: "WORKING", explicitStart: false, serverStarted: true,
+      }),
+    ]));
+
+    const complete = await post({
+      jsonrpc: "2.0", id: 331, method: "tools/call",
+      params: { name: "task_complete", arguments: { summary: "Finished without explicit begin" } },
+    }, chatSession);
+    expect(complete.status).toBe(200);
+    const result = (await complete.json()) as JsonRpcResponse;
+    expect(result.result?.structuredContent).toMatchObject({
+      status: "COMPLETED", explicitStart: false, serverStarted: true,
+      summary: "Finished without explicit begin",
+    });
+    expect(result.result?.content).toHaveLength(1);
+  });
+
+  it("an unknown MCP tool does not auto-start a stalled-alert eligible task", async () => {
+    const chatSession = "chat-invalid-tool-no-autostart";
+    const response = await post({
+      jsonrpc: "2.0", id: 332, method: "tools/call",
+      params: { name: "not_a_registered_tool", arguments: {} },
+    }, chatSession);
+    expect(response.status).toBe(200);
+    const status = await readMonitor();
+    const task = status.tasks.find((item) => item.chatSession === chatSession);
+    expect(task).toMatchObject({
+      status: "OBSERVED", explicitStart: false, serverStarted: false,
+    });
   });
 
   it("tracks explicit begin, operational activity, and explicit completion by ChatGPT session", async () => {
@@ -229,7 +357,7 @@ describe("task monitor HTTP integration", () => {
     );
   });
 
-  it("keeps implicit activity visible as INACTIVE without turning it into STALLED", async () => {
+  it("automatically starts unmarked work and marks it STALLED when completion is omitted", async () => {
     const chatSession = "chat-monitor-integration-stall";
     const response = await post(
       {
@@ -253,8 +381,9 @@ describe("task monitor HTTP integration", () => {
       expect.arrayContaining([
         expect.objectContaining({
           chatSession,
-          status: "OBSERVED",
+          status: "WORKING",
           explicitStart: false,
+          serverStarted: true,
           lastTool: "write_file",
         }),
       ]),
@@ -266,8 +395,9 @@ describe("task monitor HTTP integration", () => {
       expect.arrayContaining([
         expect.objectContaining({
           chatSession,
-          status: "INACTIVE",
+          status: "STALLED",
           explicitStart: false,
+          serverStarted: true,
         }),
       ]),
     );

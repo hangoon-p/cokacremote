@@ -51,7 +51,7 @@ export function registerTaskTools(
     {
       title: "Complete monitored work",
       description:
-        "REQUIRED LAST STEP for explicitly started Cokacremote work: call task_complete after every required Cokacremote action and verification and before the final user-facing response. Do not call it while a required MCP action or its verification is still ongoing. It is valid to complete after launching and verifying an intentionally persistent service; a remaining background process alone is not unfinished ChatGPT work.",
+        "REQUIRED LAST STEP for Cokacremote work started by task_begin OR the MCP server's begin-equivalent fallback: call task_complete after every required Cokacremote action and verification and before the final user-facing response. When the server already started work, do NOT call task_begin again for the same work. Do not call it while a required MCP action or its verification is still ongoing. It is valid to complete after launching and verifying an intentionally persistent service; a remaining background process alone is not unfinished ChatGPT work.",
       inputSchema: {
         summary: z
           .string()

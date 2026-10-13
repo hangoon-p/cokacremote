@@ -16,6 +16,7 @@ import { createMcpServer, type McpServices } from "./mcp-server.js";
 import { OAUTH_SCOPES, RemoteDevOAuthProvider } from "./oauth.js";
 import { TASK_LIFECYCLE_TOOLS } from "./task-tools.js";
 import { projectFromToolArguments } from "./task-context.js";
+import { withLifecycleReminderContext } from "./tool-result.js";
 
 interface ActiveRequest {
   server: ReturnType<typeof createMcpServer>;
@@ -253,7 +254,7 @@ export async function startHttpServer(
     }
 
     const projectName = projectFromToolArguments(rpcParams(request.body)?.arguments);
-    services.taskMonitor.toolStarted(chatSession, toolName, projectName);
+    const task = services.taskMonitor.toolStarted(chatSession, toolName, projectName);
     const processSessionId = rpcProcessSessionId(request.body);
     if (processSessionId) {
       services.taskMonitor.trackProcess(chatSession, processSessionId);
@@ -273,7 +274,10 @@ export async function startHttpServer(
         finish("aborted");
       }
     });
-    next();
+    withLifecycleReminderContext(
+      { taskMonitor: services.taskMonitor, chatSession, taskId: task.taskId },
+      next,
+    );
   };
 
   app.post(
