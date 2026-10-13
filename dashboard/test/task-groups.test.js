@@ -7,6 +7,9 @@ import {
   sessionIsExpired,
   shortSessionId,
   taskDisplayTitle,
+  visibleTaskCount,
+  sortInstances,
+  moveInstance,
 } from "../public/task-groups.js";
 
 test("groups active tasks by MCP session", () => {
@@ -34,15 +37,15 @@ test("groups active tasks by MCP session", () => {
   ]);
 
   assert.equal(groups.length, 2);
-  assert.equal(groups[0].sessionKey, "session-b");
-  assert.equal(groups[0].status, "STALLED");
-  assert.equal(groups[0].title, "Second chat request");
-  assert.equal(groups[1].sessionKey, "session-a");
-  assert.equal(groups[1].status, "WORKING");
-  assert.equal(groups[1].tasks.length, 2);
+  assert.equal(groups[0].sessionKey, "session-a");
+  assert.equal(groups[0].status, "OBSERVED");
+  assert.equal(groups[1].sessionKey, "session-b");
+  assert.equal(groups[1].status, "STALLED");
+  assert.equal(groups[1].title, "Second chat request");
+  assert.equal(groups[0].tasks.length, 2);
 });
 
-test("STALLED wins the aggregate session status", () => {
+test("newer WORKING wins over an older STALLED task", () => {
   const [group] = groupTasksBySession([
     {
       taskId: "1",
@@ -58,7 +61,7 @@ test("STALLED wins the aggregate session status", () => {
     },
   ]);
 
-  assert.equal(group.status, "STALLED");
+  assert.equal(group.status, "WORKING");
 });
 
 test("recent completed tasks stay visible beside newer work in the same session", () => {
@@ -165,7 +168,7 @@ test("long user requests are compacted for the session heading", () => {
 });
 
 
-test("INACTIVE implicit sessions remain visible and rank above OBSERVED", () => {
+test("INACTIVE implicit sessions remain visible but newer activity ranks first", () => {
   const groups = groupTasksBySession([
     {
       taskId: "observed",
@@ -184,9 +187,9 @@ test("INACTIVE implicit sessions remain visible and rank above OBSERVED", () => 
   ]);
 
   assert.equal(groups.length, 2);
-  assert.equal(groups[0].status, "INACTIVE");
-  assert.equal(groups[0].title, "제목 미지정 세션");
-  assert.equal(groups[1].status, "OBSERVED");
+  assert.equal(groups[0].status, "OBSERVED");
+  assert.equal(groups[1].status, "INACTIVE");
+  assert.equal(groups[1].title, "제목 미지정 세션");
 });
 
 
@@ -339,4 +342,47 @@ test("legacy COMPLETED tasks without completedAt fall back to lastActivityAt", (
   assert.equal(groupTasksBySession(tasks, {
     now: Date.parse("2026-10-08T09:00:00.000Z"),
   }).length, 0);
+});
+
+
+test("task list: one by default, three when expanded, all on more", () => {
+  assert.equal(visibleTaskCount(0, 8), 1);
+  assert.equal(visibleTaskCount(1, 8), 3);
+  assert.equal(visibleTaskCount(2, 8), 8);
+  assert.equal(visibleTaskCount(1, 2), 2);
+});
+
+test("latest task is selected by startedAt even if older activity was later", () => {
+  const [group] = groupTasksBySession([
+    { taskId: "old", chatSession: "s", status: "STALLED",
+      startedAt: "2026-10-13T07:00:00Z", lastActivityAt: "2026-10-13T09:00:00Z" },
+    { taskId: "new", chatSession: "s", status: "COMPLETED",
+      startedAt: "2026-10-13T08:00:00Z", completedAt: "2026-10-13T08:30:00Z",
+      lastActivityAt: "2026-10-13T08:30:00Z" },
+  ], { now: Date.parse("2026-10-13T08:50:00Z") });
+  assert.equal(group.status, "COMPLETED");
+  assert.equal(group.tasks[0].taskId, "new");
+});
+
+test("instance order is local, stable, and appends newly discovered hosts", () => {
+  const hosts = [{ instanceId: "home" }, { instanceId: "office" }, { instanceId: "server" }];
+  const order = moveInstance(hosts, [], "server", "home");
+  assert.deepEqual(order, ["server", "home", "office"]);
+  assert.deepEqual(sortInstances([...hosts, { instanceId: "aux" }], order)
+    .map((host) => host.instanceId), ["server", "home", "office", "aux"]);
+  assert.deepEqual(moveInstance(hosts, order, "missing", "home"), order);
+});
+
+test("expired new completion never resurrects an older STALLED session", () => {
+  const tasks = [
+    { taskId: "old", chatSession: "s", status: "STALLED",
+      startedAt: "2026-10-11T07:00:00Z", lastActivityAt: "2026-10-11T07:10:00Z" },
+    { taskId: "new", chatSession: "s", status: "COMPLETED",
+      startedAt: "2026-10-11T08:00:00Z", lastActivityAt: "2026-10-11T08:05:00Z",
+      completedAt: "2026-10-11T08:05:00Z" },
+  ];
+  const groups = groupTasksBySession(tasks, {
+    now: Date.parse("2026-10-13T09:00:00Z")
+  });
+  assert.equal(groups.length, 0); // No resurrection of old STALLED history.
 });

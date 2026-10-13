@@ -113,3 +113,27 @@ test("INACTIVE implicit activity remains visible telemetry without becoming a pu
   assert.deepEqual(inactive.stalledTasks, []);
   assert.equal(statusKey(inactive), statusKey(base));
 });
+
+
+test("historic STALLED does not alert when newest task in session is WORKING", () => {
+  const summary = summarizeSnapshot(snapshot({ monitor: { ok: true, state: { tasks: [
+    { taskId: "old", chatSession: "same-session", status: "STALLED",
+      startedAt: "2026-10-13T07:00:00Z", lastActivityAt: "2026-10-13T07:30:00Z" },
+    { taskId: "new", chatSession: "same-session", status: "WORKING",
+      startedAt: "2026-10-13T08:00:00Z", lastActivityAt: "2026-10-13T08:00:00Z" }
+  ] } } }));
+  assert.deepEqual(summary.stalledTasks, []);
+  assert.equal(summary.workingTasks, 1);
+  assert.equal(isHealthy(summary), true);
+});
+
+test("stalled alert is restored for a new stalled user request", () => {
+  const summary = summarizeSnapshot(snapshot({ monitor: { ok: true, state: { tasks: [
+    { taskId: "old", chatSession: "same-session", status: "COMPLETED",
+      startedAt: "2026-10-13T07:00:00Z" },
+    { taskId: "new", chatSession: "same-session", status: "STALLED",
+      startedAt: "2026-10-13T08:00:00Z" }
+  ] } } }));
+  assert.deepEqual(summary.stalledTasks.map((t) => t.taskId), ["new"]);
+  assert.equal(isHealthy(summary), false);
+});

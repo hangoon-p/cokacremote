@@ -3,6 +3,9 @@ import {
   hiddenSessionStillApplies,
   sessionIsExpired,
   taskDisplayTitle,
+  visibleTaskCount,
+  sortInstances,
+  moveInstance,
 } from "/task-groups.js";
 
 const $ = (id) => document.getElementById(id);
@@ -19,6 +22,7 @@ const hiddenSessionsEl = $("hiddenSessions");
 
 const HIDDEN_SESSIONS_KEY = "cokacremote-hidden-sessions-v1";
 const SESSION_TITLES_KEY = "cokacremote-session-titles-v1";
+const INSTANCE_ORDER_KEY = "cokacremote-instance-order-v1";
 
 let token = localStorage.getItem("cokacremote-dashboard-token") || "";
 let refreshTimer;
@@ -26,6 +30,10 @@ let hiddenSessions = loadHiddenSessions();
 let sessionTitles = loadSessionTitles();
 let renderedSessions = new Map();
 let editingSessionKey = null;
+let lastStatusData = null;
+let instanceOrder = loadInstanceOrder();
+const sessionExpansion = new Map();
+let draggingInstanceId = null;
 
 function esc(value) {
   return String(value ?? "")
@@ -33,6 +41,26 @@ function esc(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function loadInstanceOrder() {
+  try {
+    const ids = JSON.parse(localStorage.getItem(INSTANCE_ORDER_KEY) || "[]");
+    return Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function orderedInstances(instances) {
+  return sortInstances(instances, instanceOrder);
+}
+
+function reorderInstance(fromId, toId) {
+  if (!lastStatusData || fromId === toId) return;
+  instanceOrder = moveInstance(lastStatusData.instances || [], instanceOrder, fromId, toId);
+  localStorage.setItem(INSTANCE_ORDER_KEY, JSON.stringify(ids));
+  renderStatus(lastStatusData);
 }
 
 function loadHiddenSessions() {
@@ -208,6 +236,9 @@ function taskHtml(task, now) {
 }
 
 function sessionHtml(instanceId, session, now) {
+  const key = hiddenSessionKey(instanceId, session.sessionKey);
+  const level = sessionExpansion.get(key) || 0;
+  const count = visibleTaskCount(level, session.tasks.length);
   const inactive = session.lastActivityAt
     ? relative(Math.max(0, now - new Date(session.lastActivityAt).getTime()))
     : "-";
@@ -221,7 +252,8 @@ function sessionHtml(instanceId, session, now) {
             ChatGPT / MCP 세션 ${esc(session.sessionLabel)} · 마지막 활동 ${esc(inactive)}
           </div>
         </div>
-        <div class="chatSessionActions">
+        <div class="chatSessionActionColumn">
+          <div class="chatSessionActions">
           ${badge(session.status, statusKind(session.status))}
           <button
             class="smallIconButton ghost"
@@ -247,20 +279,29 @@ function sessionHtml(instanceId, session, now) {
               <path d="M9.9 9.9A3 3 0 0 0 14.1 14.1"/>
             </svg>
           </button>
+          </div>
+          ${session.tasks.length > 1 ? `<button type="button" class="sessionExpandButton ghost"
+            data-toggle-session="${esc(key)}" aria-expanded="${level !== 0}">
+            ${level === 0 ? `펼치기 (${session.tasks.length}) ▾` : "접기 ▴"}
+          </button>` : ""}
         </div>
       </div>
       <div class="chatSessionTasks">
-        ${session.tasks.map((task) => taskHtml(task, now)).join("")}
+        ${session.tasks.slice(0, count).map((task) => taskHtml(task, now)).join("")}
+        ${level === 1 && session.tasks.length > 3 ? `<button type="button"
+          class="taskMoreButton ghost" data-show-all="${esc(key)}">
+          더 보기 (${session.tasks.length - 3}개) ▾</button>` : ""}
+        ${level === 2 && session.tasks.length > 3 ? `<button type="button"
+          class="taskMoreButton ghost" data-show-less="${esc(key)}">간략히 보기 ▴</button>` : ""}
       </div>
     </section>`;
 }
 
-function instanceHtml(instance, serverTime) {
+function instanceHtml(instance, serverTime, index, total) {
   const snapshot = instance.snapshot || {};
   const server = snapshot.server || {};
   const monitor = snapshot.monitor || {};
   const tunnel = snapshot.tunnel || {};
-  const runtime = snapshot.runtime || {};
   const tasks = Array.isArray(monitor.state?.tasks) ? monitor.state.tasks : [];
   const allSessions = groupTasksBySession(tasks, { now: serverTime });
 
@@ -284,31 +325,38 @@ function instanceHtml(instance, serverTime) {
   );
 
   const tunnelUnknown = tunnel.source === "none" || !tunnel.source;
-  const cards = [
-    instance.offline ? badge("PC OFFLINE", "bad") : badge("PC ONLINE", "ok"),
-    server.ok ? badge("MCP OK", "ok") : badge("MCP DOWN", "bad"),
-    monitor.ok ? badge("MONITOR OK", "ok") : badge("MONITOR DOWN", "bad"),
-    tunnelUnknown
-      ? badge("TUNNEL N/A", "warn")
-      : tunnel.ok
-        ? badge("TUNNEL OK", "ok")
-        : badge("TUNNEL DOWN", "bad"),
-  ].join("");
+  const online = !instance.offline && server.ok === true && monitor.ok === true &&
+    (tunnelUnknown || tunnel.ok === true);
+  const offlineReasons = [
+    instance.offline ? "PC heartbeat 없음" : "",
+    !server.ok ? "MCP 서버 연결 불가" : "",
+    !monitor.ok ? "모니터 연결 불가" : "",
+    !tunnelUnknown && !tunnel.ok ? "터널 연결 불가" : "",
+  ].filter(Boolean).join(" · ");
 
   return `
-    <article class="card">
+    <article class="card instanceCard" data-instance-id="${esc(instance.instanceId)}" draggable="true">
       <div class="row spread">
         <div>
           <h3>${esc(instance.instanceId)}</h3>
           <div class="muted">${esc(instance.hostname || snapshot.hostname || "")}</div>
         </div>
-        <div class="muted">${esc(relative(instance.ageMs || 0))}</div>
+        <div class="instanceControls">
+          <div class="muted">${esc(relative(instance.ageMs || 0))}</div>
+          <div class="instanceMoveButtons" title="끌어서 이동하거나 화살표로 순서를 변경합니다">
+            <button type="button" class="smallIconButton ghost" data-instance-up="${esc(instance.instanceId)}"
+              aria-label="${esc(instance.instanceId)} 위로 이동" ${index === 0 ? "disabled" : ""}>↑</button>
+            <button type="button" class="smallIconButton ghost" data-instance-down="${esc(instance.instanceId)}"
+              aria-label="${esc(instance.instanceId)} 아래로 이동" ${index === total - 1 ? "disabled" : ""}>↓</button>
+          </div>
+        </div>
       </div>
-      <div class="badges">${cards}</div>
-      <div class="kv">
+      <div class="instanceHeartbeat">
         <span>마지막 heartbeat</span><b>${esc(time(instance.lastSeenAt))}</b>
-        <span>Runtime phase</span><b>${esc(runtime.phase || "-")}</b>
-        <span>Watcher 수집</span><b>${esc(time(snapshot.collectedAt))}</b>
+      </div>
+      <div class="instanceState">
+        ${badge(online ? "활성" : "비활성", online ? "ok" : "bad")}
+        ${!online ? `<span class="muted">${esc(offlineReasons)}</span>` : ""}
       </div>
       <div class="tasks">
         <div class="row spread taskSectionHead">
@@ -330,12 +378,13 @@ function instanceHtml(instance, serverTime) {
 }
 
 function renderStatus(data) {
-  const instances = data.instances || [];
+  const instances = orderedInstances(data.instances || []);
+  lastStatusData = data;
   renderedSessions = new Map();
 
   countEl.textContent = `${instances.length}대`;
   instancesEl.innerHTML = instances.length
-    ? instances.map((instance) => instanceHtml(instance, data.serverTime)).join("")
+    ? instances.map((instance, index) => instanceHtml(instance, data.serverTime, index, instances.length)).join("")
     : '<div class="empty">아직 heartbeat가 없습니다.</div>';
 
   renderHiddenSessions();
@@ -439,6 +488,30 @@ settingsDialog.addEventListener("click", (event) => {
 });
 
 instancesEl.addEventListener("click", (event) => {
+  const moveUp = event.target.closest("[data-instance-up]");
+  const moveDown = event.target.closest("[data-instance-down]");
+  if (moveUp || moveDown) {
+    const ids = orderedInstances(lastStatusData?.instances || []).map((item) => item.instanceId);
+    const id = (moveUp || moveDown).dataset[moveUp ? "instanceUp" : "instanceDown"];
+    const target = ids[ids.indexOf(id) + (moveUp ? -1 : 1)];
+    if (target) reorderInstance(id, target);
+    return;
+  }
+  const toggle = event.target.closest("[data-toggle-session]");
+  if (toggle) {
+    const key = toggle.dataset.toggleSession;
+    sessionExpansion.set(key, (sessionExpansion.get(key) || 0) === 0 ? 1 : 0);
+    if (lastStatusData) renderStatus(lastStatusData);
+    return;
+  }
+  const showAll = event.target.closest("[data-show-all]");
+  const showLess = event.target.closest("[data-show-less]");
+  if (showAll || showLess) {
+    const key = (showAll || showLess).dataset[showAll ? "showAll" : "showLess"];
+    sessionExpansion.set(key, showAll ? 2 : 1);
+    if (lastStatusData) renderStatus(lastStatusData);
+    return;
+  }
   const editButton = event.target.closest("[data-edit-session]");
   if (editButton) {
     const key = editButton.dataset.editSession;
@@ -462,6 +535,25 @@ instancesEl.addEventListener("click", (event) => {
   renderHiddenSessions();
   refresh();
 });
+
+instancesEl.addEventListener("dragstart", (event) => {
+  const card = event.target.closest(".instanceCard");
+  if (!card) return;
+  draggingInstanceId = card.dataset.instanceId;
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+});
+instancesEl.addEventListener("dragover", (event) => {
+  if (draggingInstanceId && event.target.closest(".instanceCard")) event.preventDefault();
+});
+instancesEl.addEventListener("drop", (event) => {
+  const card = event.target.closest(".instanceCard");
+  if (card && draggingInstanceId) {
+    event.preventDefault();
+    reorderInstance(draggingInstanceId, card.dataset.instanceId);
+  }
+  draggingInstanceId = null;
+});
+instancesEl.addEventListener("dragend", () => { draggingInstanceId = null; });
 
 $("sessionTitleForm").addEventListener("submit", (event) => {
   event.preventDefault();

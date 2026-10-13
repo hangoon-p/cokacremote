@@ -1,11 +1,3 @@
-const STATUS_PRIORITY = {
-  STALLED: 5,
-  WORKING: 4,
-  INACTIVE: 3,
-  OBSERVED: 2,
-  COMPLETED: 1,
-};
-
 function taskActivityTime(task) {
   const value =
     task?.lastActivityAt ||
@@ -17,18 +9,20 @@ function taskActivityTime(task) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function sessionStatus(tasks) {
-  let result = "COMPLETED";
-  let priority = 0;
-  for (const task of tasks) {
-    const status = String(task?.status || "OBSERVED");
-    const next = STATUS_PRIORITY[status] || STATUS_PRIORITY.OBSERVED;
-    if (next > priority) {
-      result = status;
-      priority = next;
-    }
-  }
-  return result;
+// A session reflects the newest task, never historic status severity.
+export function taskStartTime(task) {
+  const parsed = Date.parse(String(task?.startedAt || task?.lastActivityAt || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+export function latestTask(tasks) {
+  return [...tasks].sort((a, b) =>
+    taskStartTime(b) - taskStartTime(a) ||
+    taskActivityTime(b) - taskActivityTime(a)
+  )[0];
+}
+// 0 newest only; 1 newest three; 2 all.
+export function visibleTaskCount(level, count) {
+  return level === 2 ? count : Math.min(count, level === 1 ? 3 : 1);
 }
 
 function representativeTask(tasks) {
@@ -120,11 +114,6 @@ export function groupTasksBySession(
 
   for (const task of source) {
     if (!task || typeof task !== "object") continue;
-    if (!includeCompleted && task.status === "COMPLETED") continue;
-    if (task.status === "COMPLETED" && completedTaskIsExpired(task, now, retentionMs)) {
-      continue;
-    }
-
     const sessionKey =
       typeof task.chatSession === "string" && task.chatSession.trim()
         ? task.chatSession.trim()
@@ -138,7 +127,14 @@ export function groupTasksBySession(
   return [...groups.entries()]
     .map(([sessionKey, sessionTasks]) => {
       const sortedTasks = [...sessionTasks].sort(
-        (a, b) => taskActivityTime(b) - taskActivityTime(a),
+        (a, b) => taskStartTime(b) - taskStartTime(a) ||
+          taskActivityTime(b) - taskActivityTime(a),
+      );
+      // Determine the latest session state BEFORE filtering expired history.
+      // Otherwise an older STALLED entry would revive after newer COMPLETED expires.
+      const visibleTasks = sortedTasks.filter((task) =>
+        (includeCompleted || task.status !== "COMPLETED") &&
+        !(task.status === "COMPLETED" && completedTaskIsExpired(task, now, retentionMs))
       );
       const representative = representativeTask(sortedTasks);
       const explicitTitle = compactText(representative?.title, 48);
@@ -161,7 +157,7 @@ export function groupTasksBySession(
             : sortedTasks.some((task) => task?.projectName)
               ? "project"
               : "unknown",
-        status: sessionStatus(sortedTasks),
+        status: sortedTasks[0]?.status || "OBSERVED",
         lastActivityAt: sortedTasks[0]?.lastActivityAt,
         inactiveAt: sortedTasks
           .filter((task) => task?.status === "INACTIVE" && task?.inactiveAt)
@@ -174,13 +170,29 @@ export function groupTasksBySession(
           .filter(Boolean)
           .sort()
           .at(-1),
-        tasks: sortedTasks,
+        tasks: visibleTasks,
       };
     })
-    .sort((a, b) => {
-      const priorityDiff =
-        (STATUS_PRIORITY[b.status] || 0) - (STATUS_PRIORITY[a.status] || 0);
-      if (priorityDiff !== 0) return priorityDiff;
-      return taskActivityTime(b.tasks[0]) - taskActivityTime(a.tasks[0]);
-    });
+    .filter((session) =>
+      !(session.status === "COMPLETED" && sessionIsExpired(session, now, retentionMs))
+    )
+    .sort((a, b) => (Date.parse(String(b.lastActivityAt || "")) || 0) -
+      (Date.parse(String(a.lastActivityAt || "")) || 0));
+}
+
+// Browser-local instance order; newly discovered instances follow in ID order.
+export function sortInstances(instances, order = []) {
+  const ranks = new Map(order.map((id, i) => [id, i]));
+  return [...instances].sort((a, b) =>
+    (ranks.get(a.instanceId) ?? Infinity) - (ranks.get(b.instanceId) ?? Infinity) ||
+    a.instanceId.localeCompare(b.instanceId));
+}
+
+export function moveInstance(instances, order, fromId, toId) {
+  const ids = sortInstances(instances, order).map((entry) => entry.instanceId);
+  const from = ids.indexOf(fromId);
+  const to = ids.indexOf(toId);
+  if (from < 0 || to < 0 || from === to) return ids;
+  ids.splice(to, 0, ...ids.splice(from, 1));
+  return ids;
 }

@@ -440,3 +440,21 @@ dialog::backdrop {
     grid-template-columns: minmax(96px, auto) 1fr;
   }
 }
+
+/* Compact two-state instance health and device-local card order. */
+.instanceCard[draggable="true"] { cursor: grab; }
+.instanceCard[draggable="true"]:active { cursor: grabbing; }
+.instanceControls { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
+.instanceMoveButtons { display: flex; gap: 3px; }
+.instanceMoveButtons .smallIconButton { width: 26px; height: 26px; min-width: 26px; font-size: 15px; }
+.instanceHeartbeat { display: flex; gap: 10px; margin-top: 12px; font-size: 12px; color: #738096; }
+.instanceHeartbeat b { color: #263449; font-weight: 650; overflow-wrap: anywhere; }
+.instanceState { display: flex; align-items: center; gap: 7px; margin-top: 6px; }
+.instanceState .muted { font-size: 11px; }
+.chatSessionActionColumn { display: flex; flex-direction: column; align-items: flex-end; flex: 0 0 auto; gap: 7px; }
+.sessionExpandButton { padding: 4px 8px; font-size: 10px; border-radius: 8px; }
+.taskMoreButton { display: block; width: 100%; margin: 4px 0 8px; padding: 7px; font-size: 11px; }
+@media (max-width: 420px) {
+  .chatSessionActionColumn { gap: 4px; }
+  .sessionExpandButton { font-size: 10px; padding: 4px 7px; }
+}

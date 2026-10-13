@@ -2,14 +2,25 @@ export function summarizeSnapshot(snapshot) {
   const tasks = Array.isArray(snapshot?.monitor?.state?.tasks)
     ? snapshot.monitor.state.tasks
     : [];
-  const stalledTasks = tasks
-    .filter((task) => task && typeof task === "object" && task.status === "STALLED")
+  // Only current work per transport session affects alert/recovery state.
+  const latestBySession = new Map();
+  for (const task of tasks) {
+    if (!task || typeof task !== "object") continue;
+    const key = task.chatSession || task.taskId;
+    if (!key) continue;
+    const previous = latestBySession.get(key);
+    const timestamp = (item) => Date.parse(String(item.startedAt || item.lastActivityAt || "")) || 0;
+    if (!previous || timestamp(task) >= timestamp(previous)) latestBySession.set(key, task);
+  }
+  const currentTasks = [...latestBySession.values()];
+  const stalledTasks = currentTasks
+    .filter((task) => task.status === "STALLED")
     .map((task) => ({
       taskId: String(task.taskId || ""),
       title: String(task.title || task.userRequest || task.taskId || "Task").slice(0, 160),
     }))
     .sort((a, b) => a.taskId.localeCompare(b.taskId));
-  const workingTasks = tasks.filter(
+  const workingTasks = currentTasks.filter(
     (task) => task && typeof task === "object" && task.status === "WORKING",
   ).length;
   const tunnelConfigured = snapshot?.tunnel?.source && snapshot.tunnel.source !== "none";

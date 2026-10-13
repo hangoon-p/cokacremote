@@ -101,10 +101,14 @@ describe("task monitor HTTP integration", () => {
   it("exposes lifecycle tools to raw MCP clients", async () => {
     const response = await post({ jsonrpc: "2.0", id: 77, method: "tools/list", params: {} });
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { result?: { tools?: Array<{ name: string }> } };
+    const body = (await response.json()) as {
+      result?: { tools?: Array<{ name: string; inputSchema?: { required?: string[] } }> }
+    };
     expect(body.result?.tools?.map((tool) => tool.name)).toEqual(
       expect.arrayContaining(["task_begin", "task_complete"]),
     );
+    const begin = body.result?.tools?.find((tool) => tool.name === "task_begin");
+    expect(begin?.inputSchema?.required).toEqual(expect.arrayContaining(["userRequest", "title"]));
   });
 
   it("extracts project context without retaining raw command arguments", async () => {

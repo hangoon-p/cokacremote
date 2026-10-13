@@ -16,13 +16,22 @@ The office PC never needs an inbound Internet port.
 
 ## Session names and lifecycle constraints
 
-- An explicit `task_begin.title` or `userRequest` gives the most accurate description. Without it, the local MCP watcher cannot see ChatGPT's original user prompt or the actual ChatGPT conversation title.
+- An explicit `task_begin.title` (now required) and `userRequest` give the most accurate description. Without it, the local MCP watcher cannot see ChatGPT's original user prompt or the actual ChatGPT conversation title.
 - Implicit MCP calls use only a sanitized project folder name inferred from paths under `/dev/<project>`, if available; otherwise the session shows as unnamed instead of misleading tool-based labels.
 - Tap the pencil icon next to a session to name it precisely (for example, `1041508 차량번호 조회 검토`). This is stored only in that browser's localStorage; the reset button returns to the automatic name.
 - `INACTIVE` indicates unbracketed activity has stopped for the configured idle interval. `STALLED` requires a prior explicit `task_begin` and no `task_complete`. Automatically turning every implicit session into `STALLED` would falsely alert on normal completed work.
 - INACTIVE and COMPLETED tasks remain visible for 24 hours after becoming inactive or completed. Completed tasks expire individually even if newer work occurs in the same session. Manual hide/restore applies to either status; newer MCP activity automatically re-displays hidden sessions.
 - Raw MCP `tools/list` already exposes `task_begin` and `task_complete`. If ChatGPT's connected MCP tool catalogue omits them, refresh/reconnect the connection in ChatGPT before testing explicit lifecycle behavior. A new chat by itself does not guarantee that the tool catalogue refreshes.
 
+
+## Dashboard display and instance controls (2026-10-13)
+
+- The four infrastructure badges were replaced with a single `활성/비활성` status under the last watcher heartbeat. It is active only when recent heartbeat, MCP server and monitor health are good, and the configured tunnel (if any) is healthy. Diagnostic probes and alerts still exist independently.
+- Reorder instance cards by dragging, or with compact arrow controls suitable for mobile. Ordering persists **per browser/device**, not per cloud account.
+- Session controls keep status/edit/hide in the upper-right row; the task-list toggle is immediately below them. One newest task is shown initially, up to three when expanded, and all available records on `더 보기`. Expansion survives periodic data refresh.
+- A session's displayed state is determined by its newest started task; an older `STALLED` no longer overrides a newer `WORKING` or `COMPLETED`. The Worker push-alert summary also ignores superseded stalls. Historical task records remain intact, subject to the existing snapshot size and 24-hour display filtering.
+- The Native MCP tool schema requires a specific title in `task_begin`, and MCP/tool instructions re-emphasize lifecycle markers on new requests and after switching MCPs. These are **not a guarantee** that ChatGPT will always invoke those tools. Calls without a marker remain OBSERVED/INACTIVE rather than false STALLED.
+- Updating the Worker/PWA via GitHub does **not** require a Native MCP service restart. Changes to Native MCP instructions or tool schemas take effect only after the user manually restarts that service (and ChatGPT refreshes its tool catalogue if necessary).
 
 ## 1. Install
 

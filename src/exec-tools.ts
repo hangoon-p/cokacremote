@@ -61,7 +61,7 @@ export function registerExecTools(
     {
       title: "Execute command",
       description:
-        "Run an unrestricted shell command on the host. The command inherits the MCP server's full OS permissions, environment, filesystem, and network access. A successful start always returns a process session ID, current process state, and retained output; poll a running process with read_process or write_stdin.",
+        "Before the first operational Cokacremote tool call for a new user request, call task_begin with userRequest and a specific title; call task_complete after verification. Run an unrestricted shell command on the host. The command inherits the MCP server's full OS permissions, environment, filesystem, and network access. A successful start always returns a process session ID, current process state, and retained output; poll a running process with read_process or write_stdin.",
       inputSchema: {
         cmd: z.string().min(1).describe("Shell command or script to execute."),
         workdir: z
@@ -133,7 +133,7 @@ export function registerExecTools(
     {
       title: "Run script",
       description:
-        "Write a supplied script to a temporary executable file and run it with Bash, sh, Node.js, Python, or an arbitrary interpreter. Execution is unrestricted and has the MCP server's full host permissions. A successful start always returns a process session ID, current process state, and retained output.",
+        "Call task_begin with a specific title before starting new Cokacremote work, and task_complete after verifying its result. Write a supplied script to a temporary executable file and run it with Bash, sh, Node.js, Python, or an arbitrary interpreter. Execution is unrestricted and has the MCP server's full host permissions. A successful start always returns a process session ID, current process state, and retained output.",
       inputSchema: {
         runtime: z
           .enum(["bash", "sh", "node", "python", "custom"])

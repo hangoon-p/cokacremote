@@ -20,7 +20,7 @@ export function registerTaskTools(
     {
       title: "Begin monitored work",
       description:
-        "Start monitoring the current user-requested work sequence. Call this exactly once before the first operational Cokacremote tool call for a new user request. Pass the user's current instruction in userRequest and provide a short, specific, human-readable title in the user's language so the dashboard can identify the work. Repeated identical calls are idempotent.",
+        "REQUIRED FIRST STEP for each new user request that uses this Cokacremote MCP: call task_begin BEFORE any operational tool. This also applies after switching from another MCP or when the conversation is long/split. Always pass both userRequest (the user's current instruction) and a concise specific title in the user's language; the dashboard cannot infer a missing user request. Repeated identical calls are idempotent.",
       inputSchema: {
         userRequest: z
           .string()
@@ -31,8 +31,7 @@ export function registerTaskTools(
           .string()
           .min(1)
           .max(200)
-          .optional()
-          .describe("Short task title suitable for a dashboard; normally provide this even though the field remains optional for compatibility."),
+          .describe("REQUIRED: concise, specific title in the user's language describing this work (not a generic tool label)."),
       },
       annotations: TOOL_ANNOTATIONS.additiveIdempotentClosed,
       _meta: authMetadata,
@@ -52,7 +51,7 @@ export function registerTaskTools(
     {
       title: "Complete monitored work",
       description:
-        "Mark MCP-side work for the current user request complete. Call this only after every required Cokacremote action and verification is finished, and immediately before composing the final user-facing response. Do not call it while a required MCP action or its verification is still ongoing. It is valid to complete after launching and verifying an intentionally persistent service; a remaining background process alone is not unfinished ChatGPT work.",
+        "REQUIRED LAST STEP for explicitly started Cokacremote work: call task_complete after every required Cokacremote action and verification and before the final user-facing response. Do not call it while a required MCP action or its verification is still ongoing. It is valid to complete after launching and verifying an intentionally persistent service; a remaining background process alone is not unfinished ChatGPT work.",
       inputSchema: {
         summary: z
           .string()

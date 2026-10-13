@@ -41,7 +41,7 @@ export function registerFileTools(
     {
       title: "List directory",
       description:
-        "List any host directory. Recursive listing does not follow directory symlinks.",
+        "For a new user-requested Cokacremote work sequence, call task_begin with a specific title first; call task_complete after verification. List any host directory. Recursive listing does not follow directory symlinks.",
       inputSchema: {
         path: pathSchema,
         cwd: cwdSchema,
@@ -106,7 +106,7 @@ export function registerFileTools(
     {
       title: "Read file",
       description:
-        "Read a bounded chunk of any host file as UTF-8 text or base64. UTF-8 reads preserve character boundaries and may exceed maxBytes by up to three bytes only when one complete character would otherwise not fit. Continue with nextOffset until eof=true.",
+        "For new user-requested Cokacremote work, call task_begin with a specific title first; call task_complete after verification. Read a bounded chunk of any host file as UTF-8 text or base64. UTF-8 reads preserve character boundaries and may exceed maxBytes by up to three bytes only when one complete character would otherwise not fit. Continue with nextOffset until eof=true.",
       inputSchema: {
         path: pathSchema,
         cwd: cwdSchema,
