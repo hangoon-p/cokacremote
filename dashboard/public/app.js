@@ -59,7 +59,7 @@ function orderedInstances(instances) {
 function reorderInstance(fromId, toId) {
   if (!lastStatusData || fromId === toId) return;
   instanceOrder = moveInstance(lastStatusData.instances || [], instanceOrder, fromId, toId);
-  localStorage.setItem(INSTANCE_ORDER_KEY, JSON.stringify(ids));
+  localStorage.setItem(INSTANCE_ORDER_KEY, JSON.stringify(instanceOrder));
   renderStatus(lastStatusData);
 }
 

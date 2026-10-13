@@ -27,7 +27,7 @@ The office PC never needs an inbound Internet port.
 ## Dashboard display and instance controls (2026-10-13)
 
 - The four infrastructure badges were replaced with a single `활성/비활성` status under the last watcher heartbeat. It is active only when recent heartbeat, MCP server and monitor health are good, and the configured tunnel (if any) is healthy. Diagnostic probes and alerts still exist independently.
-- Reorder instance cards by dragging, or with compact arrow controls suitable for mobile. Ordering persists **per browser/device**, not per cloud account.
+- Reorder instance cards by dragging, or with compact arrow controls suitable for mobile. Ordering updates the card layout immediately without a network refresh and persists **per browser/device** through localStorage, not per cloud account.
 - Session controls keep status/edit/hide in the upper-right row; the task-list toggle is immediately below them. One newest task is shown initially, up to three when expanded, and all available records on `더 보기`. Expansion survives periodic data refresh.
 - A session's displayed state is determined by its newest started task; an older `STALLED` no longer overrides a newer `WORKING` or `COMPLETED`. The Worker push-alert summary also ignores superseded stalls. Historical task records remain intact, subject to the existing snapshot size and 24-hour display filtering.
 - The Native MCP tool schema requires a specific title in `task_begin`, and MCP/tool instructions re-emphasize lifecycle markers on new requests and after switching MCPs. These are **not a guarantee** that ChatGPT will always invoke those tools. Calls without a marker remain OBSERVED/INACTIVE rather than false STALLED.
