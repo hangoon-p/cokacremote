@@ -9,6 +9,42 @@ function taskActivityTime(task) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+// A task's clock runs only while it is WORKING or OBSERVED. Terminal/idle
+// states use their transition timestamps, not the last MCP tool activity.
+export function taskElapsedMs(task, now = Date.now()) {
+  const startedAt = Date.parse(String(task?.startedAt || ""));
+  if (!Number.isFinite(startedAt)) return null;
+
+  const status = String(task?.status || "");
+  const stoppedAt = status === "COMPLETED"
+    ? task.completedAt
+    : status === "INACTIVE"
+      ? task.inactiveAt
+      : status === "STALLED"
+        ? task.stalledAt
+        : status === "WORKING" || status === "OBSERVED"
+          ? null
+          : task.lastActivityAt;
+  const running = status === "WORKING" || status === "OBSERVED";
+  const endAt = running
+    ? now
+    : Date.parse(String(stoppedAt || task.lastActivityAt || ""));
+  if (!Number.isFinite(endAt)) return null;
+  return Math.max(0, endAt - startedAt);
+}
+
+export function formatTaskDuration(elapsedMs) {
+  if (elapsedMs == null || !Number.isFinite(elapsedMs)) return "-";
+  const totalMinutes = Math.floor(Math.max(0, elapsedMs) / 60000);
+  if (totalMinutes === 0) return "1분 미만";
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return days + "일 " + hours + "시간 " + minutes + "분";
+  if (hours > 0) return hours + "시간 " + minutes + "분";
+  return minutes + "분";
+}
+
 // A session reflects the newest task, never historic status severity.
 export function taskStartTime(task) {
   const parsed = Date.parse(String(task?.startedAt || task?.lastActivityAt || ""));

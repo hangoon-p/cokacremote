@@ -2,6 +2,8 @@ import {
   groupTasksBySession,
   hiddenSessionStillApplies,
   sessionIsExpired,
+  taskElapsedMs,
+  formatTaskDuration,
   taskDisplayTitle,
   visibleTaskCount,
   sortInstances,
@@ -221,6 +223,7 @@ function taskHtml(task, now) {
   const inactive = task.lastActivityAt
     ? relative(Math.max(0, now - new Date(task.lastActivityAt).getTime()))
     : "-";
+  const duration = formatTaskDuration(taskElapsedMs(task, now));
 
   return `
     <div class="task">
@@ -229,7 +232,7 @@ function taskHtml(task, now) {
         ${badge(status, statusKind(status))}
       </div>
       <div class="taskMeta">
-        마지막 도구 ${esc(task.lastTool || "-")} · 마지막 활동 ${esc(inactive)}
+        작업 시간 ${esc(duration)} · 마지막 활동 ${esc(inactive)}
         ${task.runningProcesses ? ` · 실행 프로세스 ${task.runningProcesses}` : ""}
       </div>
     </div>`;
