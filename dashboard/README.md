@@ -59,7 +59,7 @@ For local development:
 npm run d1:local
 ```
 
-## 3. Configure secrets
+## 3. Configure Cloudflare variables and secrets
 
 Use separate long random tokens for ingest and dashboard access:
 
@@ -74,15 +74,18 @@ Generate a VAPID key pair locally:
 node scripts/generate-vapid.mjs
 ```
 
-Store the generated keys and a VAPID subject:
+Store only the private VAPID key as a Secret:
 
 ```bash
-npx wrangler secret put VAPID_PUBLIC_KEY
 npx wrangler secret put VAPID_PRIVATE_KEY
-npx wrangler secret put VAPID_SUBJECT
 ```
 
-A VAPID subject can be a `mailto:` address or an HTTPS URL you control.
+In Cloudflare **Workers & Pages > cokacremote-monitor > Settings > Variables and Secrets**, add these two values as **Plaintext** variables:
+
+- `VAPID_PUBLIC_KEY`: the matching generated public key.
+- `VAPID_SUBJECT`: a `mailto:` address or HTTPS URL you control.
+
+The top-level `"keep_vars": true` setting in `wrangler.jsonc` preserves dashboard-managed plaintext variables when deploying through Wrangler (including GitHub-triggered builds). Without it, a subsequent deployment replaces dashboard-defined plaintext variables with those in `wrangler.jsonc`; existing Secrets are preserved separately. `OFFLINE_AFTER_SECONDS` is a normal plaintext variable defined in that file.
 
 Never commit secret values. For local Wrangler development, place them in `.dev.vars`.
 
