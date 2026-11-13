@@ -34,8 +34,8 @@ function authorized(request, expected) {
 }
 
 function offlineAfterMs(env) {
-  const parsed = Number(env.OFFLINE_AFTER_SECONDS || "120");
-  const seconds = Number.isFinite(parsed) && parsed >= 30 ? parsed : 120;
+  const parsed = Number(env.OFFLINE_AFTER_SECONDS || "300");
+  const seconds = Number.isFinite(parsed) && parsed >= 30 ? parsed : 300;
   return Math.round(seconds * 1000);
 }
 

@@ -20,6 +20,6 @@
     "crons": ["* * * * *"]
   },
   "vars": {
-    "OFFLINE_AFTER_SECONDS": "120"
+    "OFFLINE_AFTER_SECONDS": "300"
   }
 }

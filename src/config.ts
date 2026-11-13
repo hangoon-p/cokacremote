@@ -206,7 +206,7 @@ export function loadConfig(
     ),
     taskStallMs: parseInteger(
       env.MCP_TASK_STALL_MS,
-      3 * 60 * 1000,
+      5 * 60 * 1000,
       "MCP_TASK_STALL_MS",
       1000,
     ),

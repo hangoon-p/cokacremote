@@ -95,7 +95,7 @@ Never commit secret values. For local Wrangler development, place them in `.dev.
 npm run deploy
 ```
 
-The Worker and `public/` PWA assets are deployed together. The Cron Trigger runs every minute and checks for missing heartbeats. `OFFLINE_AFTER_SECONDS` defaults to 120 seconds in `wrangler.jsonc`.
+The Worker and `public/` PWA assets are deployed together. The Cron Trigger runs every minute and checks for missing heartbeats. `OFFLINE_AFTER_SECONDS` defaults to 300 seconds in `wrangler.jsonc`.
 
 ## 5. Configure each monitored Cokacremote host
 
